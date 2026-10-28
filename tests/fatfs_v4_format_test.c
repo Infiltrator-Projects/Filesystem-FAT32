@@ -77,11 +77,16 @@ int main(int argc,char **argv) {
     if(api->format(&io,cluster_bytes)!=0 || disk.writes==0)
         return fail("format image");
     if(api->v3->mount(&io)!=0 || api->space(&total,&free_before)!=0 ||
-       !total || total!=free_before ||
-       api->v3->mkdir("0:/FORMAT")!=0 || api->v3->create("0:/FORMAT/META.TXT")!=0 ||
+       !total || free_before>total ||
+       /* FAT32 allocates one 512-byte root cluster when formatting;
+        * FAT12/16 use a fixed non-data root directory. */
+       total-free_before!=io.sector_bytes)
+        return fail("FAT32 root-cluster space accounting");
+    if(api->v3->mkdir("0:/FORMAT")!=0 ||
+       api->v3->create("0:/FORMAT/META.TXT")!=0 ||
        api->v3->write("0:/FORMAT/META.TXT",0,payload,(uint32_t)(sizeof payload-1u))!=0 ||
        api->space(&total,&free_after)!=0 || free_after>=free_before)
-        return fail("create and free-space accounting");
+        return fail("create/write/free-space accounting");
     if(api->set_attributes("0:/FORMAT/META.TXT",1u,1u)!=0 ||
        api->v3->stat("0:/FORMAT/META.TXT",&entry)!=0 || !(entry.attributes&1u) ||
        api->v3->write("0:/FORMAT/META.TXT",0,"X",1u)==0 ||
