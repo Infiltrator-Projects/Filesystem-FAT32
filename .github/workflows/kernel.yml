@@ -50,7 +50,7 @@ jobs:
           for pair in "32 64M" "12 1440K" "16 8M"; do
             set -- $pair
             truncate -s "$2" "$RUNNER_TEMP/fat$1.img"
-            mkfs.fat -F "$1" -I "$RUNNER_TEMP/fat$1.img"
+            mkfs.fat -F "$1" -I -s 1 "$RUNNER_TEMP/fat$1.img"
           done
           root="$RUNNER_TEMP/fat-initramfs"
           mkdir -p "$root"/{bin,proc,sys,dev,mnt/test}
