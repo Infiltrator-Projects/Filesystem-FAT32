@@ -74,8 +74,8 @@ jobs:
           version=$(cat VERSION)
           tag="v${version}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Public release $tag exists; refusing mutation." >&2
-            exit 1
+            echo "Immutable release $tag already exists; retain its published artifacts."
+            exit 0
           fi
           gh release create "$tag" dist/*.deb dist/*.run \
             --target "$GITHUB_SHA" --title "Filesystem FAT32 ${version}" \
