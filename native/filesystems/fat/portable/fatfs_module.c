@@ -225,11 +225,6 @@ static int rename_directory_safe(const char *from,const char *to)
     unsigned length=0,last_separator=0,has_separator=0;
     if (f_stat(from,&source_info)!=FR_OK) return 0;
     if (!(source_info.fattrib & AM_DIR)) return 1;
-#if IFS_FATFS_ONLY == 32
-    /* FAT32 directory ancestry needs high-word cluster validation first.
-     * Refuse unsafe directory renames rather than corrupting media. */
-    return 0;
-#endif
     if (f_opendir(&source_dir,from)!=FR_OK) return 0;
     source_cluster=source_dir.obj.sclust;
     if (f_closedir(&source_dir)!=FR_OK || source_cluster<2u) return 0;
@@ -252,7 +247,11 @@ static int rename_directory_safe(const char *from,const char *to)
     if (f_opendir(&parent_dir,parent)!=FR_OK) return 0;
     parent_cluster=parent_dir.obj.sclust;
     if (f_closedir(&parent_dir)!=FR_OK) return 0;
-    for(DWORD steps=0;parent_cluster!=0u && steps<volume.n_fatent;++steps) {
+    for(DWORD steps=0; parent_cluster!=0u &&
+#if IFS_FATFS_ONLY == 32
+        parent_cluster!=volume.dirbase &&
+#endif
+        steps<volume.n_fatent; ++steps) {
         LBA_t first_sector;
         if(parent_cluster==source_cluster || parent_cluster<2u ||
            parent_cluster>=volume.n_fatent) return 0;
@@ -260,13 +259,26 @@ static int rename_directory_safe(const char *from,const char *to)
         if(disk_read(0,sector,first_sector,1)!=RES_OK ||
            sector[0]!='.' || sector[1]!=' ' || !(sector[11]&AM_DIR) ||
            sector[32]!='.' || sector[33]!='.' || sector[34]!=' ' ||
-           !(sector[43]&AM_DIR) || sector[20] || sector[21] ||
-           sector[52] || sector[53] ||
-           ((DWORD)sector[26] | (DWORD)sector[27]<<8)!=parent_cluster)
+           !(sector[43]&AM_DIR) ||
+#if IFS_FATFS_ONLY == 32
+           (((DWORD)sector[20]<<16 | (DWORD)sector[21]<<24 |
+             (DWORD)sector[26] | (DWORD)sector[27]<<8)!=parent_cluster) ||
+#else
+           sector[20] || sector[21] || sector[52] || sector[53] ||
+           ((DWORD)sector[26] | (DWORD)sector[27]<<8)!=parent_cluster ||
+#endif
+           0)
             return 0;
         parent_cluster=(DWORD)sector[58] | (DWORD)sector[59]<<8;
+#if IFS_FATFS_ONLY == 32
+        parent_cluster|=(DWORD)sector[52]<<16 | (DWORD)sector[53]<<24;
+#endif
     }
+#if IFS_FATFS_ONLY == 32
+    return parent_cluster==0u || parent_cluster==volume.dirbase;
+#else
     return parent_cluster==0u;
+#endif
 }
 static int rename_path(const char *from,const char *to) {
     return selected && from && to && rename_directory_safe(from,to) &&
