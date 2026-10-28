@@ -1,0 +1,24 @@
+name: FAT32 independent driver qualification
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  efi-ovmf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Install real EDK2 and OVMF test dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential nasm uuid-dev acpica-tools python3 python3-setuptools gnu-efi binutils qemu-system-x86 ovmf dosfstools mtools gdisk
+      - name: Build format-restricted independent FAT32 EFI driver
+        run: bash scripts/build-fat32-efi.sh
+      - name: Run writable EFI driver binding and foreign-format rejection
+        run: bash scripts/test-fat-uefi-ovmf.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fat32-efi-ovmf-tested
+          path: build-fat-efi/FAT32.efi
+          if-no-files-found: error
