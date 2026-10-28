@@ -52,8 +52,12 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
+  native-efi:
+    uses: ./.github/workflows/drivers.yml
+  native-kernel:
+    uses: ./.github/workflows/kernel.yml
   publish:
-    needs: qualify
+    needs: [qualify, native-efi, native-kernel]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
@@ -64,6 +68,14 @@ jobs:
         with:
           name: fat32-qualified-${{ github.sha }}
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: fat32-efi-ovmf-tested
+          path: build/native
+      - uses: actions/download-artifact@v4
+        with:
+          name: fat32-ko-qemu-verified
+          path: build/native
       - name: Publish exact qualified release once
         env:
           GH_TOKEN: ${{ github.token }}
@@ -73,10 +85,15 @@ jobs:
           test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
           version=$(cat VERSION)
           tag="v${version}"
+          test -s build/native/FAT32.efi
+          test -s build/native/fat32.ko
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Immutable release $tag already exists; retain its published artifacts."
             exit 0
           fi
-          gh release create "$tag" dist/*.deb dist/*.run \
+          install -m 0644 build/native/FAT32.efi dist/FAT32.efi
+          install -m 0644 build/native/fat32.ko dist/fat32-linux-6.12.107.ko
+          sha256sum dist/*.deb dist/*.run dist/*.efi dist/*.ko
+          gh release create "$tag" dist/*.deb dist/*.run dist/*.efi dist/*.ko \
             --target "$GITHUB_SHA" --title "Filesystem FAT32 ${version}" \
-            --notes "Independent FAT32.so shared object. GitHub generates the source ZIP and tar.gz from this exact tag. Kernel and EFI drivers and Defragmenter are not included; disposable-image testing only."
+            --notes "Independent FAT32.so (source-compiled native RUN) and x86-64 FAT32.efi tested in OVMF. fat32-linux-6.12.107.ko was tested only against pinned Linux 6.12.107 in QEMU and must be rebuilt for the host kernel. General real-media safety, crash recovery, Boot root loading and kernel module signing remain separate."

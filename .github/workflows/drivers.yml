@@ -1,7 +1,6 @@
 name: FAT32 independent driver qualification
 on:
-  push:
-    branches: [main]
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
