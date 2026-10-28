@@ -95,7 +95,11 @@ for bits in "${formats[@]}"; do
     fsck.fat -n "$case_dir/after12.img"
     fsck.fat -n "$case_dir/after16.img"
     fsck.fat -n "$case_dir/after32.img"
-    cmp "$image32" "$case_dir/after32.img"
+    # The selected FAT32 partition MUST have changed after the successful
+    # writable driver test. Only foreign formats are required byte-identical.
+    if [[ $bits != 32 ]]; then
+        cmp "$image32" "$case_dir/after32.img"
+    fi
     if [[ $bits == 32 ]]; then
         cmp "$image12" "$case_dir/after12.img"
         cmp "$image16" "$case_dir/after16.img"
