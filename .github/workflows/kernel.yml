@@ -1,0 +1,83 @@
+name: FAT32 native Linux kernel read-write QEMU qualification
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kernel-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Install kernel build and disposable media dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bc bison flex libelf-dev libssl-dev qemu-system-x86 busybox-static cpio dosfstools mtools kmod
+      - name: Compile pinned Linux 6.12.107 with authentic built-in FAT core
+        shell: bash
+        run: |
+          set -euo pipefail
+          kernel="$RUNNER_TEMP/linux-fat"
+          commit=f717995cb7dcd8998ab15516b8006aea09cfde0d
+          curl --fail --location --retry 5 --retry-delay 4 --retry-all-errors \
+            --connect-timeout 30 --max-time 600 \
+            "https://codeload.github.com/gregkh/linux/tar.gz/$commit" \
+            --output "$RUNNER_TEMP/linux-fat.tar.gz"
+          mkdir -p "$kernel"
+          tar -xzf "$RUNNER_TEMP/linux-fat.tar.gz" -C "$kernel" --strip-components=1
+          make -C "$kernel" defconfig
+          "$kernel/scripts/config" --file "$kernel/.config" \
+            --enable MSDOS_FS --disable VFAT_FS --enable NLS --enable NLS_CODEPAGE_437 \
+            --enable NLS_ISO8859_1 --enable BLK_DEV_INITRD --enable DEVTMPFS \
+            --enable DEVTMPFS_MOUNT --enable VIRTIO --enable VIRTIO_PCI \
+            --enable VIRTIO_BLK --enable SERIAL_8250 --enable SERIAL_8250_CONSOLE --enable TMPFS
+          make -C "$kernel" olddefconfig
+          grep -Fxq 'CONFIG_FAT_FS=y' "$kernel/.config"
+          grep -Fxq '# CONFIG_VFAT_FS is not set' "$kernel/.config"
+          make -C "$kernel" -j"$(nproc)" bzImage modules
+          test -s "$kernel/Module.symvers"
+      - name: Build exact-source FAT32 namespace module
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build-fat-ko
+          bash packaging/linux/fat-kernel-build.sh 32 "$PWD/build-fat-ko" "$RUNNER_TEMP/linux-fat"
+          test "$(modinfo -F name build-fat-ko/fat32.ko)" = fat32
+          test "$(modinfo -F license build-fat-ko/fat32.ko)" = GPL
+      - name: Boot kernel and perform FAT32 write, rename, remount and foreign-width rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in "32 64M" "12 1440K" "16 8M"; do
+            set -- $pair
+            truncate -s "$2" "$RUNNER_TEMP/fat$1.img"
+            mkfs.fat -F "$1" -I "$RUNNER_TEMP/fat$1.img"
+          done
+          root="$RUNNER_TEMP/fat-initramfs"
+          mkdir -p "$root"/{bin,proc,sys,dev,mnt/test}
+          cp /usr/bin/busybox "$root/bin/busybox"
+          for app in sh mount umount mkdir cat mv sync poweroff test grep insmod sha256sum; do
+            ln -s busybox "$root/bin/$app"
+          done
+          cp build-fat-ko/fat32.ko "$root/"
+          cp tests/fat32_kernel_runtime_init.sh "$root/init"
+          chmod +x "$root/init"
+          (cd "$root" && find . -print0 | cpio --null -ov --format=newc | gzip -9) > "$RUNNER_TEMP/fat-initramfs.cpio.gz"
+          timeout 180 qemu-system-x86_64 -machine accel=tcg -m 768 -nographic -no-reboot \
+            -kernel "$RUNNER_TEMP/linux-fat/arch/x86/boot/bzImage" \
+            -initrd "$RUNNER_TEMP/fat-initramfs.cpio.gz" \
+            -append 'console=ttyS0 panic=1 rdinit=/init' \
+            -drive "file=$RUNNER_TEMP/fat32.img,format=raw,if=virtio" \
+            -drive "file=$RUNNER_TEMP/fat12.img,format=raw,if=virtio" \
+            -drive "file=$RUNNER_TEMP/fat16.img,format=raw,if=virtio" \
+            2>&1 | tee "$RUNNER_TEMP/fat32-kernel-serial.log"
+          grep -Fq 'FAT32-KO-RUNTIME-PASS' "$RUNNER_TEMP/fat32-kernel-serial.log"
+          ! grep -Fq 'FAT32-KO-RUNTIME-FAIL' "$RUNNER_TEMP/fat32-kernel-serial.log"
+          fsck.fat -n "$RUNNER_TEMP/fat32.img"
+          mcopy -i "$RUNNER_TEMP/fat32.img" '::/tree/Renamed Long Name.txt' "$RUNNER_TEMP/readback.txt"
+          test "$(cat "$RUNNER_TEMP/readback.txt")" = 'fat32 kernel driver survives remount'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fat32-ko-qemu-verified
+          path: build-fat-ko/fat32.ko
+          if-no-files-found: error
