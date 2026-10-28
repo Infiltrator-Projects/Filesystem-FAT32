@@ -457,8 +457,12 @@ FatOpenDevice (
   if (FatType != Fat16) {
     return EFI_UNSUPPORTED;
   }
+#elif defined(IFS_FAT_ONLY) && IFS_FAT_ONLY == 32
+  if (FatType != Fat32) {
+    return EFI_UNSUPPORTED;
+  }
 #else
-#error "A format-specific FAT12/FAT16 EFI build must define IFS_FAT_ONLY"
+#error "A format-specific FAT12/FAT16/FAT32 EFI build must define IFS_FAT_ONLY"
 #endif
 
   Volume->FatType = FatType;

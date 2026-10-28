@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
-# Build TWO variant-specific genuine VFAT namespace drivers.
+# Independently compile the FAT32-specific Linux VFAT namespace adapter.
 # They depend on the normal Linux FAT core, as upstream vfat.ko does.
 # NEVER silently replace the distribution's existing fat.ko or vfat.ko.
-obj-m += fat12.o
-obj-m += fat16.o
-fat12-y := namei_fat12.o
-fat16-y := namei_fat16.o
+obj-m += fat32.o
+fat32-y := namei_fat32.o

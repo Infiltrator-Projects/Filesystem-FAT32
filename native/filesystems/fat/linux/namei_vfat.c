@@ -1296,6 +1296,8 @@ static int vfat_init_fs_context(struct fs_context *fc)
 #define IFS_FAT_MODULE_ID "fat12"
 #elif defined(IFS_FAT_ONLY) && IFS_FAT_ONLY == 16
 #define IFS_FAT_MODULE_ID "fat16"
+#elif defined(IFS_FAT_ONLY) && IFS_FAT_ONLY == 32
+#define IFS_FAT_MODULE_ID "fat32"
 #elif !defined(IFS_FAT_ONLY)
 #define IFS_FAT_MODULE_ID "vfat"
 #else

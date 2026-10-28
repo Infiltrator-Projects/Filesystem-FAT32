@@ -76,5 +76,4 @@
 ###################################################################################################
 
 [Components]
-  FatPkg/EnhancedFatDxe/Fat12.inf
-  FatPkg/EnhancedFatDxe/Fat16.inf
+  FatPkg/EnhancedFatDxe/Fat32.inf
