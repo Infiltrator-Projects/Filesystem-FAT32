@@ -87,6 +87,14 @@ int main(int argc,char **argv) {
        api->v3->write("0:/FORMAT/META.TXT",0,payload,(uint32_t)(sizeof payload-1u))!=0 ||
        api->space(&total,&free_after)!=0 || free_after>=free_before)
         return fail("create/write/free-space accounting");
+    /* FAT32 directory moves must validate high + low cluster ancestry.
+     * A parent cannot move inside its descendant even under case aliases. */
+    if(api->v3->mkdir("0:/FORMAT/CHILD")!=0 ||
+       api->v3->rename("0:/FORMAT","0:/FORMAT/CHILD/RECURSIVE")==0 ||
+       api->v3->rename("0:/FORMAT/CHILD","0:/FORMAT/CHILD2")!=0 ||
+       api->v3->stat("0:/FORMAT/CHILD2",&entry)!=0 ||
+       !(entry.attributes & 0x10u))
+        return fail("FAT32 directory ancestry or valid sibling rename");
     if(api->set_attributes("0:/FORMAT/META.TXT",1u,1u)!=0 ||
        api->v3->stat("0:/FORMAT/META.TXT",&entry)!=0 || !(entry.attributes&1u) ||
        api->v3->write("0:/FORMAT/META.TXT",0,"X",1u)==0 ||
