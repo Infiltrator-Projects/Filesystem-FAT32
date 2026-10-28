@@ -17,9 +17,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build and inspection prerequisites
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential binutils python3 dpkg-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential binutils python3 dpkg-dev dosfstools mtools
       - name: Compile and exercise exactly one shared object
         run: make check
+      - name: Cross-check independent FAT32 read/write against real dosfstools media
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/external-fat
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -I native/filesystems/fat/portable tests/fatfs_v3_realimage_test.c \
+            -ldl -o build/external-fat/realtest
+          truncate -s 128M build/external-fat/fat32.img
+          truncate -s 8M build/external-fat/fat16.img
+          mkfs.fat -F 32 -I -s 1 build/external-fat/fat32.img
+          mkfs.fat -F 16 -I -s 1 build/external-fat/fat16.img
+          build/external-fat/realtest build/FAT32.so build/external-fat/fat32.img build/external-fat/fat16.img
+          fsck.fat -n build/external-fat/fat32.img
+          mcopy -n -i build/external-fat/fat32.img \
+            '::/SUBDIR/Verified Café Ünîcode Data.txt' build/external-fat/external.bin
+          python3 - <<'PY'
+          from pathlib import Path
+          data=Path("build/external-fat/external.bin").read_bytes()
+          assert data == bytes((i*17+23)&255 for i in range(1000))
+          print("FAT32 independent post-remount file data verified")
+          PY
+          build/external-fat/realtest build/FAT32.so build/external-fat/fat32.img build/external-fat/fat16.img cleanup
+          fsck.fat -n build/external-fat/fat32.img
+          echo "FAT32 REAL-WRITE FAT-CHECKER CROSS-VERIFIED"
       - name: Build the DEB and native source installer
         run: make release
       - name: Validate release bytes and native installation
