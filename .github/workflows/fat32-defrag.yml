@@ -1,0 +1,51 @@
+name: FAT32 canonical defragmentation module candidate
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fat32-defrag-so:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Pin the real Common/Libraries headers without vendoring them
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: Infiltrator-Projects/Libraries
+          ref: b8fe1e37618acc43dbb4bb8182533fff109dd286
+          path: .deps/Libraries
+      - name: Compile all genuine FAT32 filesystem and relayout sources together
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          fat=native/filesystems/fat
+          defrag="$fat/defrag"
+          cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC \
+             -fno-builtin -fno-stack-protector -ffreestanding \
+             -fvisibility=hidden -nostdlib -shared \
+             -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 \
+             -DIFS_FATFS_ONLY=32 -DIFS_FAT_DEFRAG_BITS=32 \
+             -I "$fat/module" -I "$fat/portable" \
+             -I "$defrag" -I "$defrag/host" -I .deps/Libraries/include \
+             "$fat/module/fat32_module.c" \
+             "$fat/portable/fatfs_module.c" "$fat/portable/ff.c" \
+             "$fat/portable/ffunicode.c" "$fat/portable/fatfs_libc.c" \
+             "$defrag/writer.c" "$defrag/fat_analysis.c" \
+             "$defrag/fat_directory.c" "$defrag/fat_relayout.c" \
+             "$defrag/fat_io.c" "$defrag/fat_journal.c" \
+             "$defrag/fat_relocation.c" "$defrag/fat_volume.c" \
+             "$defrag/fat_defrag_module.c" \
+             -Wl,-z,defs -Wl,-z,relro -Wl,-z,now \
+             -o build/FAT32.so
+          for symbol in infiltrator_filesystem_module_v1 \
+              infiltrator_filesystem_module_v3 \
+              infiltrator_filesystem_module_v4 \
+              infiltrator_filesystem_defrag_v1; do
+            readelf -Ws build/FAT32.so | grep -F "$symbol"
+          done
+          ! readelf -d build/FAT32.so | grep -q '[(]NEEDED[)]'
