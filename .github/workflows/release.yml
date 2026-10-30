@@ -9,7 +9,7 @@ permissions:
   contents: read
 concurrency:
   group: filesystem-fat32-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   qualify:
     runs-on: ubuntu-24.04
@@ -77,12 +77,89 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
+  defrag-consumer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get the actual Defragmenter host and pinned Common dependency
+        uses: actions/checkout@v4
+        with:
+          repository: Infiltrator-Projects/Defragmenter
+          ref: 0e707548d5227fee3654e8467f1cb7ef13a02d2d
+          path: .qualification/Defragmenter
+          submodules: recursive
+      - name: Install source and independent FAT32 image test tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential cmake binutils python3 dosfstools mtools
+      - name: Exercise the shared SO with real Defragmenter defrag and recovery
+        run: |
+          make check
+          python3 tests/fat32_defrag_compat.py --module build/FAT32.so \
+            --defragmenter-source .qualification/Defragmenter
+  boot-consumer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out the released Boot implementation
+        uses: actions/checkout@v4
+        with:
+          repository: Infiltrator-Projects/Boot
+          ref: dbc6a710dbe88b78318c8b9afbf47bb64e8706b3
+          path: .qualification/Boot
+      - name: Install actual OVMF, kernel and ELF qualification tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential binutils python3 gnu-efi qemu-system-x86 ovmf dosfstools mtools busybox-static cpio
+      - name: Qualify portable and native SO through the unmodified Boot runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE"
+          boot="$root/.qualification/Boot"
+          make check
+          python3 standalone/build.py --profile aggressive --output build-native/FAT32.so --check
+          # Only FAT16-specific fixture names and geometry change; Boot itself does not.
+          python3 - "$boot" <<'PY'
+          from pathlib import Path
+          import sys
+          boot=Path(sys.argv[1])
+          p=boot/'tests/run-so-tests.sh'
+          s=p.read_text().replace('FAT16', 'FAT32').replace('fat16', 'fat32')
+          s=s.replace('truncate -s 32M', 'truncate -s 128M')
+          s=s.replace('mkfs.fat -F 16 ', 'mkfs.fat -F 32 -s 1 ')
+          p.write_text(s)
+          p=boot/'tests/so_module_test.c'
+          p.write_text(p.read_text().replace('"fat16"', '"fat32"'))
+          p=boot/'tests/test_so_boot.py'
+          s=p.read_text().replace('FAT16', 'FAT32').replace('fat16', 'fat32')
+          s=s.replace('"mkfs.fat", "-F", "16", "-I"', '"mkfs.fat", "-F", "32", "-s", "1", "-I"')
+          p.write_text(s)
+          PY
+          (cd "$boot" && bash scripts/build-gnuefi.sh)
+          for profile in build build-native; do
+            bash "$boot/tests/run-so-tests.sh" "$root/$profile/FAT32.so" "$root"
+          done
+          IFS_SO_SANITIZE=1 bash "$boot/tests/run-so-tests.sh" "$root/build/FAT32.so" "$root"
+          mkdir -p build/boot-kernel
+          package=$(apt-cache depends linux-image-generic | awk '/Depends: linux-image-[0-9]/ {sub("linux-image-", "linux-image-unsigned-", $2); print $2; exit}')
+          test -n "$package"
+          (cd build/boot-kernel && apt-get download "$package")
+          dpkg-deb -x build/boot-kernel/*.deb build/boot-kernel/root
+          kernel=$(find "$root/build/boot-kernel/root/boot" -name 'vmlinuz-*' -print -quit)
+          test -s "$kernel"
+          for profile in build build-native; do
+            python3 "$boot/tests/test_so_boot.py" --boot "$boot/refind/refind_x64.efi" \
+              --module "$root/$profile/FAT32.so" --kernel "$kernel" \
+              --output "$root/build/boot-$profile"
+          done
+          python3 "$boot/tests/test_so_boot.py" --boot "$boot/refind/refind_x64.efi" \
+            --module "$root/build/FAT32.so" --kernel "$kernel" --reject-module \
+            --output "$root/build/boot-reject"
   native-efi:
     uses: ./.github/workflows/drivers.yml
   native-kernel:
     uses: ./.github/workflows/kernel.yml
   publish:
-    needs: [qualify, native-efi, native-kernel]
+    needs: [qualify, defrag-consumer, boot-consumer, native-efi, native-kernel]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
