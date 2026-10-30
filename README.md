@@ -11,7 +11,7 @@ make release
 
 Aggressive builds use `-O3 -march=native -mtune=native -flto=auto` and real two-pass GCC PGO trained on disposable regular-file images; release CI must confirm ABI exports, native build records and module SHA-256.
 
-**Scope:** the initial release includes only `/System/Filesystems/FAT32.so`. Native Linux `.ko`, EFI `.efi`, complete Defragmenter integration, root mounting and physical-device safety are not yet qualified or published.
+**Published v0.1.2 scope:** The package installs only `/System/Filesystems/FAT32.so`. Separate native FAT32.efi and kernel-specific fat32-linux-6.12.107.ko binaries are published and VM-tested; they are transitional and do not constitute a generic kernel SO loader. Root mounting, physical-device safety and universal single-SO deployment remain unqualified.\n\n**Unreleased candidate:** The independent source now includes the previously written full FAT32 defragmentation/relocation/recovery engine and generic read-only Boot ELF/UEFI adapter in the exact same FAT32.so. Production Defragmenter and real Boot integration qualification must pass before updating this release claim.
 
 Sources originated in [Filesystems](https://github.com/Infiltrator-Projects/Filesystems) and the existing FAT12/FAT16 independent module work. See [provenance](MIGRATION-PROVENANCE.md) and [validation](docs/VALIDATION.md).
 
