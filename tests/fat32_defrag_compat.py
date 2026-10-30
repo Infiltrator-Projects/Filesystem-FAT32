@@ -116,6 +116,9 @@ target_link_libraries(fat-worker PRIVATE InfiltratrCommon::Common dl pthread)
             assert sha(wrong) == before and journal.is_file()
             command("recover", image, journal)
             assert not journal.exists()
+            # Recover guarantees original content/consistency; interrupted
+            # source may still be in a noncanonical placement. Finish it.
+            command("growth-defrag", image, journal)
             run("python3", verify, image)
             check_growth_fixture(image)
         foreign = work / "foreign.img"
