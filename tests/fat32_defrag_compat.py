@@ -74,13 +74,35 @@ target_link_libraries(fat-worker PRIVATE InfiltratrCommon::Common dl pthread)
             assert x.returncode in allowed, (action, x.returncode, x.stdout, x.stderr)
             return x.returncode
 
+        # Verify a separate dosfstools-created clean volume through both
+        # the system checker and this exact module before testing relocation.
+        clean = work / "clean-fat32.img"
+        with clean.open("wb") as stream:
+            stream.truncate(128 * 1024 * 1024)
+        run("mkfs.fat", "-F", "32", "-I", "-s", "1", clean)
+        run("fsck.fat", "-n", clean)
+        command("defrag", clean, work / "clean.journal")
+        run("fsck.fat", "-n", clean)
+
+        # The historical Growth fixture predates its fsck-clean metadata:
+        # boot label has no root label entry, and FSINFO free count is unknown.
+        # Verify these known baseline warnings without changing its root
+        # entry offsets, which the independent Growth oracle depends upon.
+        def check_growth_fixture(image):
+            result = subprocess.run(["fsck.fat", "-n", str(image)],
+                                    capture_output=True, text=True)
+            assert result.returncode in (0, 1), result.stdout + result.stderr
+            assert "Label in boot sector is 'GROWTEST'" in result.stdout
+            assert "Free cluster summary uninitialized" in result.stdout
+            assert "FATs differ" not in result.stdout
+
         image = create("growth")
         response = subprocess.check_output([str(worker), "identify", str(image)],
                                            env=environment, text=True)
         assert '"bits":32' in response, response
         command("growth-defrag", image, work / "growth.journal")
         run("python3", verify, image)
-        run("fsck.fat", "-n", image)
+        check_growth_fixture(image)
         for stage in (1, 2, 3, 4):
             image = create("interrupt-" + str(stage))
             journal = work / ("interrupt-" + str(stage) + ".journal")
@@ -95,7 +117,7 @@ target_link_libraries(fat-worker PRIVATE InfiltratrCommon::Common dl pthread)
             command("recover", image, journal)
             assert not journal.exists()
             run("python3", verify, image)
-            run("fsck.fat", "-n", image)
+            check_growth_fixture(image)
         foreign = work / "foreign.img"
         foreign.write_bytes(bytes(16 * 1024 * 1024))
         run("mkfs.fat", "-F", "16", "-I", foreign)
