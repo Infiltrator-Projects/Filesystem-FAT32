@@ -44,6 +44,9 @@ typedef struct {
     int (*directory_entry)(const char *, uint32_t, IfsFatfsEntry *);
 } IfsFatfsModuleV3;
 const IfsFatfsModuleV3 *infiltrator_filesystem_module_v3(void);
+/* Generic Boot uses partition-relative, bounded byte I/O. */
+int ifs_fatfs_boot_attach(const IfsFatfsIo *);
+
 
 /* V4 extends V3 without changing its layout. Formatting is destructive and
  * operates only on the partition described by the caller's I/O callbacks.
