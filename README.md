@@ -22,3 +22,13 @@ Sources originated in [Filesystems](https://github.com/Infiltrator-Projects/File
 The complete original Linux FAT/VFAT source under `native/filesystems/fat/linux/` and TianoCore EDK2 EFI FAT source under `native/filesystems/fat/efi/` have been imported as **real, editable source files**, not references. All 50 imported blobs were checked byte-for-byte against the pinned Filesystems source revision. Independent FAT32-specific transitional KO and EFI binaries are VM-qualified for their pinned environments, but the DEB and RUN still install only `FAT32.so`.
 
 The source archive and native RUN contain these sources so future FAT32-specific `.ko` and `.efi` work can proceed without returning to a scattered implementation. The corresponding kernel and firmware release artifacts have their own qualification workflows; they are not substitutes for the eventual generic kernel SO loader.
+
+## Installer files
+
+- `/System/Filesystems/FAT32.so`
+- `/System/Resources/Documentation/Filesystem-FAT32/FAT32.pdf`
+- `/System/Kernel/Filesystems/fat32.ko`
+
+The published Debian package installs these three regular files. A manual native RUN compiles the shared object and Linux adapter locally, generates the PDF, and replaces all three files. It uses the running kernel headers by default. Use `--kernel-build DIRECTORY` for a prepared kernel build with `Module.symvers`. The kernel module is stored for manual use.
+
+InfiltratorOS calls `--system-package-mode` and decides which outputs need updating. Its worker builds a missing or older SO, repairs the PDF independently, and stores the matching released kernel module when available. Use `--build-only --output DIRECTORY` to build a Debian package.

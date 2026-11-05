@@ -1,4 +1,3 @@
-/build/
-/dist/
+
+kernel-source/
 __pycache__/
-*.pyc
