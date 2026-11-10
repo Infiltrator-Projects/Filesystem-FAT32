@@ -43,3 +43,11 @@ RECOVER and DEFRAG are not advertised without a qualified Common adapter.
 Only one volume is mounted in this FatFs engine at once; the host must grant
 exclusive access for generic writes or formatting. Existing format-specific
 entry points remain temporarily for already installed native consumers.
+
+## Common V2 host and volume contract
+
+`FAT32.so` also exports `infiltrator_filesystem_api_v2`. Its
+negotiated volume group supports real sync and format operations via the
+existing FatFs engine. Host geometry and access are validated by Common's
+V2 adaptation helpers. Missing handles, metadata, recovery and defrag groups
+are not advertised; the binary makes no unproven kernel-execution claim.

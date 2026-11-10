@@ -9,6 +9,7 @@
 #include "diskio.h"
 #include "fat32_module.h"
 #include "infiltratr/filesystem_module.h"
+#include "infiltratr/filesystem_module_v2.h"
 
 #if defined(IFS_FATFS_ONLY) && IFS_FATFS_ONLY == 12
 #define REQUIRED_FS FS_FAT12
@@ -825,4 +826,48 @@ __attribute__((visibility("default")))
 const IfsFsModuleApiV1 *infiltrator_filesystem_api_v1(void)
 {
     return &common_api;
+}
+
+/* Common V2 delegates volume operations to the same canonical FatFs engine.
+ * Neither kernel direct-execution nor unimplemented recovery is claimed. */
+static int v2_sync(void *volume) {
+    if (!common_session_valid(volume)) return IFS_FS_INVALID;
+    if (!common_session.host.flush) return IFS_FS_OK;
+    return common_session.host.flush(common_session.host.context) == 0 ?
+           IFS_FS_OK : IFS_FS_IO_ERROR;
+}
+static int v2_format(const IfsFsHostRuntimeV2 *host,
+                     uint32_t variant, const char *label, uint32_t flags) {
+    IfsFsHostFormatIoV1 adapted={0};
+    int result;
+    if (flags) return IFS_FS_UNSUPPORTED;
+    if (!host) return IFS_FS_INVALID;
+    if (host->capabilities & IFS_FS_HOST_READ_ONLY) return IFS_FS_ACCESS;
+    result=ifs_fs_host_v2_as_format_v1(host,&adapted);
+    if (result!=IFS_FS_OK) return result;
+    return common_format(&adapted.host,variant,label);
+}
+__attribute__((used,section(".ifsmeta")))
+static const char common_v2_identity[]="IFS-MODULE:fat32:common2";
+static const IfsFsVolumeOpsV1 common_volume={
+    .header={IFS_FS_GROUP_ABI_V1,sizeof(IfsFsVolumeOpsV1),
+             IFS_FS_GROUP_VOLUME,0u,
+             IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT},
+    .sync=v2_sync,
+    .format=v2_format
+};
+static const IfsFsGroupHeaderV2 *common_query(
+    uint32_t id,uint32_t min,uint32_t max) {
+    if (id!=IFS_FS_GROUP_VOLUME || min>IFS_FS_GROUP_ABI_V1 ||
+        max<IFS_FS_GROUP_ABI_V1) return NULL;
+    return &common_volume.header;
+}
+static const IfsFsModuleApiV2 common_v2={
+    IFS_FS_COMMON_ABI_V2,sizeof(IfsFsModuleApiV2),"fat32",
+    IFS_FS_PROFILE_HOSTED|IFS_FS_PROFILE_FREESTANDING,
+    IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME),&common_api,common_query
+};
+__attribute__((visibility("default")))
+const IfsFsModuleApiV2 *infiltrator_filesystem_api_v2(void) {
+    return &common_v2;
 }

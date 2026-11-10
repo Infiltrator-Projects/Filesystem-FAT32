@@ -22,7 +22,7 @@ SOURCES = [MOD / "fat32_module.c"] + [
     "fat_volume.c", "fat_defrag_module.c")]
 INCLUDES = [MOD, PORT, DEF, DEF / "host", ROOT / "native/include",
             ROOT / "src/infiltratr-common/include"]
-EXPORTS = ("infiltrator_filesystem_api_v1", "infiltrator_filesystem_module_v1", "infiltrator_filesystem_module_v3",
+EXPORTS = ("infiltrator_filesystem_api_v2", "infiltrator_filesystem_api_v1", "infiltrator_filesystem_module_v1", "infiltrator_filesystem_module_v3",
            "infiltrator_filesystem_module_v4", "infiltrator_filesystem_defrag_v1",
            "infiltrator_filesystem_boot_v1")
 
@@ -43,6 +43,8 @@ def inspect(module):
     for api in (1, 3, 4):
         if f"IFS-MODULE:fat{WIDTH}:{api}" not in meta:
             raise RuntimeError("Missing exact FAT format identity")
+    if f"IFS-MODULE:fat{WIDTH}:common2" not in meta:
+        raise RuntimeError("Missing Common V2 identity")
     if f"IFS-MODULE:fat{WIDTH}:common1" not in meta:
         raise RuntimeError("Missing Common ABI identity")
     if "(NEEDED)" in subprocess.check_output(["readelf", "-d", str(module)], text=True):
