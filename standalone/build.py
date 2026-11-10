@@ -202,7 +202,7 @@ def release_source_files():
             q.startswith("native/include/") or
             q.startswith("standalone/") or q.startswith("docs/") or
             q in ("README.md", "VERSION", "MIGRATION-PROVENANCE.md",
-                  "src/infiltratr-common/LICENSE", f"tests/fat{WIDTH}_module_test.c",
+                  "src/infiltratr-common/LICENSE", "tests/common_v1_abi_test.c", f"tests/fat{WIDTH}_module_test.c",
                   "tests/fatfs_v4_format_test.c")
         )
         if selected and (ROOT / p).is_file() and not (ROOT / p).is_symlink():
