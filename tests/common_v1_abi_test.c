@@ -28,9 +28,13 @@ int main(int argc, char **argv)
     if(!ifs_fs_api_v2_valid(v2,"fat32") ||
        v2->base_v1 != api ||
        ifs_fs_group_v2(v2,IFS_FS_GROUP_VOLUME)==NULL ||
+       !(((const IfsFsVolumeOpsV1 *)ifs_fs_group_v2(v2,IFS_FS_GROUP_VOLUME))
+         ->header.capabilities & IFS_FS_VOLUME_QUERY) ||
+       !((const IfsFsVolumeOpsV1 *)ifs_fs_group_v2(v2,IFS_FS_GROUP_VOLUME))
+         ->query ||
        ifs_fs_group_v2(v2,IFS_FS_GROUP_HANDLES)!=NULL ||
        (v2->runtime_profiles & IFS_FS_PROFILE_KERNEL)) {
-        fputs("Common V2 contract failed\\n",stderr);
+        fputs("Common V2 contract failed\n",stderr);
         dlclose(library);return 1;
     }
     puts("FAT32 Common V1/V2 contract passed");
