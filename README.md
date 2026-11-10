@@ -33,3 +33,13 @@ The published portable Debian package installs two regular files:
 The manual native RUN builds these two files and can optionally include `/System/Kernel/Filesystems/fat32.ko` when run outside `--system-package-mode` against prepared kernel headers. It uses the running kernel headers by default; use `--kernel-build DIRECTORY` for another prepared kernel build with `Module.symvers`. The optional module is stored for manual use.
 
 InfiltratorOS calls `--system-package-mode` and decides which outputs need updating. Its worker builds a missing or older SO, repairs the PDF independently, and stores the matching released kernel module when available. Use `--build-only --output DIRECTORY` to build a Debian package.
+
+## Common filesystem ABI
+
+The distributable `FAT32.so` exports `infiltrator_filesystem_api_v1`, the
+format-neutral Common V1 table. It delegates probe, mount, file and directory
+operations, and format to this repository's existing FAT32 engine. CHECK,
+RECOVER and DEFRAG are not advertised without a qualified Common adapter.
+Only one volume is mounted in this FatFs engine at once; the host must grant
+exclusive access for generic writes or formatting. Existing format-specific
+entry points remain temporarily for already installed native consumers.
