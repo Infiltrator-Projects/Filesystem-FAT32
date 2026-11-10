@@ -74,59 +74,52 @@ static int fail(const char *reason)
 }
 int main(void)
 {
-    const IfsFat32Module *api = infiltrator_filesystem_module_v1();
-    IfsFat32Io io = {read_at, NULL, sizeof image};
+    IfsFat32Io io = {read_at,NULL,sizeof image};
     IfsFat32Volume vol = {0};
     IfsFat32File file = {0};
-    uint32_t fragments;
+    uint32_t fragments=0;
     unsigned char bytes[1200];
-    if (!api || api->abi_version != 1u ||
-        api->structure_bytes != sizeof(*api) ||
-        strcmp(api->format_id, "fat32") != 0 ||
-        (api->capabilities & IFS_FAT32_CAP_FILE_READ) == 0 ||
-        (api->capabilities & IFS_FAT32_CAP_ROOT_FRAGMENT_COUNT) == 0)
-        return fail("ABI/identity missing");
     fixture();
-    if (api->probe(&io, &vol) != 0 || vol.root_cluster != 2u ||
+    if (ifs_fat32_probe(&io, &vol) != 0 || vol.root_cluster != 2u ||
         vol.cluster_count < 65525u || vol.cluster_bytes != SECTOR)
         return fail("real FAT32 geometry rejected");
-    if (api->root_file(&io, &vol, 0u, &file) != 0 ||
+    if (ifs_fat32_root_file(&io, &vol, 0u, &file) != 0 ||
         strcmp(file.name, "HELLO.TXT") != 0 || file.size_bytes != 1200u)
         return fail("root directory cluster traversal failed");
-    if (api->root_file(&io, &vol, 1u, &file) != 1)
+    if (ifs_fat32_root_file(&io, &vol, 1u, &file) != 1)
         return fail("extra root directory entry accepted");
-    if (api->root_file_fragments(&io, &vol, &file, &fragments) != 0 ||
+    if (ifs_fat32_root_file_fragments(&io, &vol, &file, &fragments) != 0 ||
         fragments != 3u)
         return fail("fragment count incorrect");
-    if (api->read_file(&io, &vol, &file, 0u, bytes, sizeof bytes) != 0)
+    if (ifs_fat32_read_file(&io, &vol, &file, 0u, bytes, sizeof bytes) != 0)
         return fail("fragmented file read failed");
     for (unsigned i = 0; i < sizeof bytes; ++i)
         if (bytes[i] != (unsigned char)('A' + i / SECTOR))
             return fail("FAT32 file contents incorrect");
-    if (api->read_file(&io, &vol, &file, 1199u, bytes, 2u) == 0)
+    if (ifs_fat32_read_file(&io, &vol, &file, 1199u, bytes, 2u) == 0)
         return fail("out-of-file read accepted");
     fat(7u, UINT32_C(0x0fffffff));
-    if (api->root_file_fragments(&io, &vol, &file, &fragments) == 0)
+    if (ifs_fat32_root_file_fragments(&io, &vol, &file, &fragments) == 0)
         return fail("short FAT32 file chain accepted");
     fixture();
     fat(2u, 0u);
-    if (api->root_file(&io, &vol, 0u, &file) == 0)
+    if (ifs_fat32_root_file(&io, &vol, 0u, &file) == 0)
         return fail("invalid root FAT chain accepted");
     fixture();
     image[13] = 2u; /* FAT16 cluster range, regardless of FAT32 label. */
-    if (api->probe(&io, &vol) == 0)
+    if (ifs_fat32_probe(&io, &vol) == 0)
         return fail("FAT16 sized partition falsely probed as FAT32");
     fixture();
     p32(image + 44, 1u); /* Reserved cluster may not be root. */
-    if (api->probe(&io, &vol) == 0)
+    if (ifs_fat32_probe(&io, &vol) == 0)
         return fail("invalid root cluster accepted");
     fixture();
     image[RESERVED * SECTOR] = 0u;
-    if (api->probe(&io, &vol) == 0)
+    if (ifs_fat32_probe(&io, &vol) == 0)
         return fail("invalid FAT32 reserved entry accepted");
     fixture();
     io.device_bytes = 512u;
-    if (api->probe(&io, &vol) == 0)
+    if (ifs_fat32_probe(&io, &vol) == 0)
         return fail("truncated partition accepted");
     puts("FAT32-MODULE-READ-ROOT-CLUSTER-AND-FRAGMENT-PASS");
     return 0;

@@ -8,7 +8,6 @@
 #include "ff.h"
 #include "diskio.h"
 #include "fat32_module.h"
-#include "infiltratr/filesystem_module.h"
 #include "infiltratr/filesystem_module_v2.h"
 
 #if defined(IFS_FATFS_ONLY) && IFS_FATFS_ONLY == 12
@@ -475,19 +474,19 @@ const IfsFatfsModuleV4 *infiltrator_filesystem_module_v4(void) {return &module_v
 /* Common V1 delegates to the canonical FAT32 engine, without duplicating it.
  * The FAT12 integrity scanner validates geometry; one FatFs engine owns
  * all mounts, file operations and formatting. No legacy API tables. */
-static int common_probe(const IfsFsHostIoV1 *host,
+static int common_probe(const IfsFsHostRuntimeV2 *host,
                         uint32_t *detected_variant)
 {
     IfsFat32Io input;
     IfsFat32Volume geometry;
     if (!host || host->structure_bytes < sizeof(*host) ||
         !host->read_at || !detected_variant || host->volume_bytes < 512u ||
-        (host->flags & ~(IFS_FS_IO_READ_ONLY | IFS_FS_IO_EXCLUSIVE)))
+        !ifs_fs_host_v2_valid(host))
         return IFS_FS_INVALID;
     input.read_at = host->read_at;
     input.context = host->context;
     input.device_bytes = host->volume_bytes;
-    if (infiltrator_filesystem_module_v1()->probe(&input, &geometry) != 0)
+    if (ifs_fat32_probe(&input, &geometry) != 0)
         return IFS_FS_NOT_FOUND;
     *detected_variant = 32u;
     return IFS_FS_OK;
@@ -495,64 +494,47 @@ static int common_probe(const IfsFsHostIoV1 *host,
 static int common_read(void *context, uint64_t offset,
                        void *destination, uint32_t bytes)
 {
-    const IfsFsHostIoV1 *host = (const IfsFsHostIoV1 *)context;
+    const IfsFsHostRuntimeV2 *host = (const IfsFsHostRuntimeV2 *)context;
     return host->read_at(host->context, offset, destination, bytes);
 }
 static int common_write(void *context, uint64_t offset,
                         const void *source, uint32_t bytes)
 {
-    const IfsFsHostIoV1 *host = (const IfsFsHostIoV1 *)context;
+    const IfsFsHostRuntimeV2 *host = (const IfsFsHostRuntimeV2 *)context;
     return host->write_at(host->context, offset, source, bytes);
 }
 static int common_flush(void *context)
 {
-    const IfsFsHostIoV1 *host = (const IfsFsHostIoV1 *)context;
+    const IfsFsHostRuntimeV2 *host = (const IfsFsHostRuntimeV2 *)context;
     return host->flush(host->context);
 }
 static uint32_t common_timestamp(void *context)
 {
     (void)context;
-    /* Common V1 currently has no timestamp provider; use valid FAT epoch. */
+    /* FAT epoch used until a qualified clock callback is available. */
     return (1u << 21) | (1u << 16);
 }
-static int common_format(const IfsFsHostIoV1 *host, uint32_t variant,
-                         const char *volume_label)
+static int common_format(const IfsFsHostRuntimeV2 *host, uint32_t variant,
+                         const char *volume_label, uint32_t flags)
 {
-    IfsFat32Io input;
-    IfsFat32Volume geometry;
     IfsFatfsIo io;
     if (!host || host->structure_bytes < sizeof(*host) ||
         !host->read_at || host->volume_bytes < 512u ||
-        (host->flags & ~(IFS_FS_IO_READ_ONLY | IFS_FS_IO_EXCLUSIVE)))
+        !ifs_fs_host_v2_valid(host))
         return IFS_FS_INVALID;
-    if ((host->flags & IFS_FS_IO_READ_ONLY) ||
-        !(host->flags & IFS_FS_IO_EXCLUSIVE) ||
+    if ((host->capabilities & IFS_FS_HOST_READ_ONLY) ||
+        !(host->capabilities & IFS_FS_HOST_EXCLUSIVE) ||
         !host->write_at || !host->flush)
         return IFS_FS_ACCESS;
     if (selected || bound) return IFS_FS_BUSY;
+    if (flags) return IFS_FS_UNSUPPORTED;
     if (variant != 32u || (volume_label && volume_label[0]))
         return IFS_FS_UNSUPPORTED;
-    /* Common V1 does not provide physical/logical sector size for an empty
-     * target. Reformat only a previously validated FAT12 volume: NEVER guess
-     * blank-device geometry, and never access an actively mounted device. */
-    input.read_at = host->read_at;
-    input.context = host->context;
-    input.device_bytes = host->volume_bytes;
-    /* Blank media requires a verified sector-size host descriptor;
-     * an identified volume supplies its own verified BPB geometry. */
-    uint32_t sector_bytes=0u;
-    if (host->structure_bytes >= sizeof(IfsFsHostFormatIoV1)) {
-        const IfsFsHostFormatIoV1 *extended =
-            (const IfsFsHostFormatIoV1 *)(const void *)host;
-        sector_bytes=extended->logical_sector_bytes;
-        if (extended->reserved || (sector_bytes!=512u &&
-            sector_bytes!=1024u && sector_bytes!=2048u &&
-            sector_bytes!=4096u)) return IFS_FS_INVALID;
-    } else {
-        if (infiltrator_filesystem_module_v1()->probe(&input, &geometry) != 0)
-            return IFS_FS_NOT_FOUND;
-        sector_bytes=geometry.bytes_per_sector;
-    }
+    /* Do not infer or guess geometry for destructive writes. */
+    const uint32_t sector_bytes=host->logical_sector_bytes;
+    if(sector_bytes!=512u && sector_bytes!=1024u &&
+       sector_bytes!=2048u && sector_bytes!=4096u)
+        return IFS_FS_INVALID;
     io.user = (void *)host;
     io.partition_bytes = host->volume_bytes;
     io.sector_bytes = sector_bytes;
@@ -567,7 +549,7 @@ static int common_format(const IfsFsHostIoV1 *host, uint32_t variant,
  * Its media context is exclusive; refuse concurrent mounts rather than
  * risk redirecting callers between partitions. Host I/O is copied. */
 static struct {
-    IfsFsHostIoV1 host;
+    IfsFsHostRuntimeV2 host;
     uintptr_t serial;       /* Never recycle opaque Common mount handles. */
     uintptr_t active_handle;
     int mounted;
@@ -576,24 +558,24 @@ static struct {
 static int common_writable(void)
 {
     return common_session.mounted &&
-           !(common_session.host.flags & IFS_FS_IO_READ_ONLY) &&
-           (common_session.host.flags & IFS_FS_IO_EXCLUSIVE) &&
+           !(common_session.host.capabilities & IFS_FS_HOST_READ_ONLY) &&
+           (common_session.host.capabilities & IFS_FS_HOST_EXCLUSIVE) &&
            common_session.host.write_at && common_session.host.flush;
 }
 static int common_guarded_write(void *context, uint64_t at,
                                 const void *data, uint32_t length)
 {
-    const IfsFsHostIoV1 *host = (const IfsFsHostIoV1 *)context;
-    if ((host->flags & IFS_FS_IO_READ_ONLY) ||
-        !(host->flags & IFS_FS_IO_EXCLUSIVE) || !host->write_at)
+    const IfsFsHostRuntimeV2 *host = (const IfsFsHostRuntimeV2 *)context;
+    if ((host->capabilities & IFS_FS_HOST_READ_ONLY) ||
+        !(host->capabilities & IFS_FS_HOST_EXCLUSIVE) || !host->write_at)
         return -1;
     return host->write_at(host->context, at, data, length);
 }
 static int common_guarded_flush(void *context)
 {
-    const IfsFsHostIoV1 *host = (const IfsFsHostIoV1 *)context;
-    if ((host->flags & IFS_FS_IO_READ_ONLY) ||
-        !(host->flags & IFS_FS_IO_EXCLUSIVE))
+    const IfsFsHostRuntimeV2 *host = (const IfsFsHostRuntimeV2 *)context;
+    if ((host->capabilities & IFS_FS_HOST_READ_ONLY) ||
+        !(host->capabilities & IFS_FS_HOST_EXCLUSIVE))
         return 0;
     return host->flush ? host->flush(host->context) : -1;
 }
@@ -627,8 +609,8 @@ static int common_path(const char *path, char translated[4096])
     translated[i+2u]='\0';
     return IFS_FS_OK;
 }
-static int common_mount(const IfsFsHostIoV1 *host, void **context,
-                        IfsFsVolumeInfoV1 *info)
+static int common_mount(const IfsFsHostRuntimeV2 *host, void **context,
+                        IfsFsVolumeInfoV2 *info)
 {
     IfsFat32Io input;
     IfsFat32Volume geometry;
@@ -637,7 +619,7 @@ static int common_mount(const IfsFsHostIoV1 *host, void **context,
     if (!host || host->structure_bytes<sizeof(*host) || !host->read_at ||
         !context || !info || info->structure_bytes<sizeof(*info) ||
         host->volume_bytes<512u ||
-        (host->flags & ~(IFS_FS_IO_READ_ONLY | IFS_FS_IO_EXCLUSIVE)))
+        !ifs_fs_host_v2_valid(host))
         return IFS_FS_INVALID;
     *context=0;
     if (common_session.mounted || selected || bound ||
@@ -645,7 +627,7 @@ static int common_mount(const IfsFsHostIoV1 *host, void **context,
     input.read_at=host->read_at;
     input.context=host->context;
     input.device_bytes=host->volume_bytes;
-    if (infiltrator_filesystem_module_v1()->probe(&input,&geometry)!=0)
+    if (ifs_fat32_probe(&input,&geometry)!=0)
         return IFS_FS_NOT_FOUND;
     common_session.host=*host;
     io.user=&common_session.host;
@@ -683,7 +665,7 @@ static int common_unmount(void *context)
     common_session.active_handle=0u;
     return IFS_FS_OK;
 }
-static int common_entry(IfsFsEntryV1 *out, const IfsFatfsEntry *file_info,
+static int common_entry(IfsFsEntryV2 *out, const IfsFatfsEntry *file_info,
                         int root)
 {
     const char *source=root?"/":file_info->name;
@@ -702,7 +684,7 @@ static int common_entry(IfsFsEntryV1 *out, const IfsFatfsEntry *file_info,
               IFS_FS_ENTRY_DIRECTORY : IFS_FS_ENTRY_FILE;
     return IFS_FS_OK;
 }
-static int common_stat(void *context, const char *path, IfsFsEntryV1 *out)
+static int common_stat(void *context, const char *path, IfsFsEntryV2 *out)
 {
     char p[4096];
     IfsFatfsEntry entry;
@@ -715,7 +697,7 @@ static int common_stat(void *context, const char *path, IfsFsEntryV1 *out)
     return common_entry(out,&entry,0);
 }
 static int common_directory_entry(void *context, const char *path,
-                                  uint32_t index, IfsFsEntryV1 *out)
+                                  uint32_t index, IfsFsEntryV2 *out)
 {
     char p[4096];
     IfsFatfsEntry entry;
@@ -809,65 +791,70 @@ static int common_truncate(void *context, const char *path, uint64_t length)
 
 
 
-__attribute__((used,section(".ifsmeta")))
-static const char common_identity[] = "IFS-MODULE:fat32:common1";
-static const IfsFsModuleApiV1 common_api = {
-    IFS_FS_COMMON_ABI_V1, sizeof(IfsFsModuleApiV1), "fat32",
-    IFS_FS_CAP_PROBE | IFS_FS_CAP_MOUNT | IFS_FS_CAP_LIST |
-    IFS_FS_CAP_READ | IFS_FS_CAP_WRITE | IFS_FS_CAP_CREATE |
-    IFS_FS_CAP_REMOVE | IFS_FS_CAP_RENAME | IFS_FS_CAP_TRUNCATE |
-    IFS_FS_CAP_FORMAT,
-    common_probe, common_mount, common_unmount, common_stat,
-    common_directory_entry, common_file_read, common_file_write,
-    common_create, common_remove, common_rename, common_truncate,
-    common_format, NULL, NULL
-};
-__attribute__((visibility("default")))
-const IfsFsModuleApiV1 *infiltrator_filesystem_api_v1(void)
-{
-    return &common_api;
-}
-
 /* Common V2 delegates volume operations to the same canonical FatFs engine.
  * Neither kernel direct-execution nor unimplemented recovery is claimed. */
+/* Query current allocation information from the one mounted FatFs engine. */
+static int v2_query(void *mounted, IfsFsVolumeInfoV2 *info)
+{
+    uint64_t total=0u,free_bytes=0u;
+    if(!common_session_valid(mounted) || !info ||
+       info->structure_bytes<sizeof(*info))
+        return IFS_FS_INVALID;
+    if(volume_space(&total,&free_bytes)!=0)return IFS_FS_IO_ERROR;
+    info->variant=32u;
+    info->max_name_bytes=765u;
+    info->block_bytes=(uint32_t)volume.csize*device.sector_bytes;
+    info->total_bytes=total;
+    info->free_bytes=free_bytes;
+    return IFS_FS_OK;
+}
 static int v2_sync(void *volume) {
     if (!common_session_valid(volume)) return IFS_FS_INVALID;
     if (!common_session.host.flush) return IFS_FS_OK;
     return common_session.host.flush(common_session.host.context) == 0 ?
            IFS_FS_OK : IFS_FS_IO_ERROR;
 }
-static int v2_format(const IfsFsHostRuntimeV2 *host,
-                     uint32_t variant, const char *label, uint32_t flags) {
-    IfsFsHostFormatIoV1 adapted={0};
-    int result;
-    if (flags) return IFS_FS_UNSUPPORTED;
-    if (!host) return IFS_FS_INVALID;
-    if (host->capabilities & IFS_FS_HOST_READ_ONLY) return IFS_FS_ACCESS;
-    result=ifs_fs_host_v2_as_format_v1(host,&adapted);
-    if (result!=IFS_FS_OK) return result;
-    return common_format(&adapted.host,variant,label);
-}
 __attribute__((used,section(".ifsmeta")))
 static const char common_v2_identity[]="IFS-MODULE:fat32:common2";
-static const IfsFsVolumeOpsV1 common_volume={
-    .header={IFS_FS_GROUP_ABI_V1,sizeof(IfsFsVolumeOpsV1),
+static const IfsFsVolumeOpsV2 common_volume={
+    .header={IFS_FS_GROUP_ABI_V2,sizeof(IfsFsVolumeOpsV2),
              IFS_FS_GROUP_VOLUME,0u,
-             IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT},
+             IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT},
+    .query=v2_query,
     .sync=v2_sync,
-    .format=v2_format
+    .format=common_format
+};
+/* V2 core and volume tables operate against the same native FatFs state. */
+static const IfsFsCoreOpsV2 common_core={
+    .header={IFS_FS_GROUP_ABI_V2,sizeof(IfsFsCoreOpsV2),
+             IFS_FS_GROUP_CORE,0u,
+             IFS_FS_CORE_PROBE|IFS_FS_CORE_MOUNT|IFS_FS_CORE_STAT|
+             IFS_FS_CORE_LIST|IFS_FS_CORE_READ|IFS_FS_CORE_WRITE|
+             IFS_FS_CORE_CREATE|IFS_FS_CORE_REMOVE|IFS_FS_CORE_RENAME|
+             IFS_FS_CORE_TRUNCATE},
+    .probe=common_probe, .mount=common_mount, .unmount=common_unmount,
+    .stat=common_stat, .directory_entry=common_directory_entry,
+    .read=common_file_read, .write=common_file_write,
+    .create=common_create, .remove=common_remove,
+    .rename=common_rename, .truncate=common_truncate
 };
 static const IfsFsGroupHeaderV2 *common_query(
-    uint32_t id,uint32_t min,uint32_t max) {
-    if (id!=IFS_FS_GROUP_VOLUME || min>IFS_FS_GROUP_ABI_V1 ||
-        max<IFS_FS_GROUP_ABI_V1) return NULL;
-    return &common_volume.header;
+    uint32_t group_id,uint32_t minimum,uint32_t maximum)
+{
+    if(minimum>IFS_FS_GROUP_ABI_V2 || maximum<IFS_FS_GROUP_ABI_V2)
+        return NULL;
+    if(group_id==IFS_FS_GROUP_CORE)return &common_core.header;
+    if(group_id==IFS_FS_GROUP_VOLUME)return &common_volume.header;
+    return NULL;
 }
 static const IfsFsModuleApiV2 common_v2={
     IFS_FS_COMMON_ABI_V2,sizeof(IfsFsModuleApiV2),"fat32",
     IFS_FS_PROFILE_HOSTED|IFS_FS_PROFILE_FREESTANDING,
-    IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME),&common_api,common_query
+    IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE)|IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME),
+    common_query
 };
 __attribute__((visibility("default")))
-const IfsFsModuleApiV2 *infiltrator_filesystem_api_v2(void) {
+const IfsFsModuleApiV2 *infiltrator_filesystem_api_v2(void)
+{
     return &common_v2;
 }

@@ -22,7 +22,7 @@ SOURCES = [MOD / "fat32_module.c"] + [
     "fat_volume.c", "fat_defrag_module.c")]
 INCLUDES = [MOD, PORT, DEF, DEF / "host", ROOT / "native/include",
             ROOT / "src/infiltratr-common/include"]
-EXPORTS = ("infiltrator_filesystem_api_v2", "infiltrator_filesystem_api_v1", "infiltrator_filesystem_module_v1", "infiltrator_filesystem_module_v3",
+EXPORTS = ("infiltrator_filesystem_api_v2", "infiltrator_filesystem_module_v3",
            "infiltrator_filesystem_module_v4", "infiltrator_filesystem_defrag_v1",
            "infiltrator_filesystem_boot_v1")
 
@@ -40,13 +40,15 @@ def inspect(module):
         if symbol not in exports:
             raise RuntimeError("Missing ABI export: " + symbol)
     meta = subprocess.check_output(["readelf", "-p", ".ifsmeta", str(module)], text=True)
-    for api in (1, 3, 4):
+    for api in (3, 4):
         if f"IFS-MODULE:fat{WIDTH}:{api}" not in meta:
             raise RuntimeError("Missing exact FAT format identity")
     if f"IFS-MODULE:fat{WIDTH}:common2" not in meta:
         raise RuntimeError("Missing Common V2 identity")
-    if f"IFS-MODULE:fat{WIDTH}:common1" not in meta:
-        raise RuntimeError("Missing Common ABI identity")
+    for retired in ("infiltrator_filesystem_api_v1",
+                    "infiltrator_filesystem_module_v1"):
+        if retired in exports:
+            raise RuntimeError("Retired Common V1 export: " + retired)
     if "(NEEDED)" in subprocess.check_output(["readelf", "-d", str(module)], text=True):
         raise RuntimeError("Unexpected runtime shared-library dependency")
     manifest = struct.pack("<8sIIII16s32s", b"IFSBOOT1", 72, 1, 62, 1,
@@ -114,28 +116,34 @@ def build(profile, module):
     return flags
 
 def test(module, workspace=None):
+    # The independent FAT32 parser is internal, not a second public ABI.
     exe = module.parent / "fat32-module-test"
     run([os.environ.get("CC", "cc"), "-std=c11", "-O2", "-Wall", "-Wextra",
          "-Werror", "-I", MOD, ROOT / "tests/fat32_module_test.c",
-         module, "-Wl,-rpath,$ORIGIN", "-o", exe])
+         MOD / "fat32_module.c", "-o", exe])
     run([exe])
-    common_test = module.parent / "fat32-common-abi-test"
-    run([os.environ.get("CC", "cc"), "-std=c11", "-O2", "-Wall", "-Wextra",
-         "-Werror", "-I", ROOT / "src/infiltratr-common/include",
-         ROOT / "tests/common_v1_abi_test.c", "-ldl", "-o", common_test])
-    run([common_test, module])
-    common_test.unlink()
     exe.unlink()
+    abi = module.parent / "fat32-common-v2-abi-test"
+    run([os.environ.get("CC", "cc"), "-std=c11", "-O2",
+         "-Wall", "-Wextra", "-Werror", "-I", ROOT / "src/infiltratr-common/include",
+         ROOT / "tests/common_v2_abi_test.c", "-ldl", "-o", abi])
+    run([abi, module])
+    abi.unlink()
     with tempfile.TemporaryDirectory(prefix="fat32-qa-", dir=workspace or module.parent) as tmp:
         work = Path(tmp)
-        harness = work / "fat32-volume-test"
-        run([os.environ.get("CC", "cc"), "-std=c11", "-O2", "-Wall", "-Wextra",
-             "-Werror", "-I", PORT, ROOT / "tests/fatfs_v4_format_test.c",
-             "-ldl", "-o", harness])
-        image = work / "disposable-fat.img"
-        with image.open("wb") as disk:
-            disk.truncate(72 * 1024 * 1024)
-        run([harness, module, image, "512", "512"])
+        for name, test_source, args in [
+            ("fat32-v2-volume-test", "fatfs_common_format_test.c", ["512"]),
+            ("fat32-v4-volume-test", "fatfs_v4_format_test.c", ["512", "512"])
+        ]:
+            harness = work / name
+            run([os.environ.get("CC", "cc"), "-std=c11", "-O2", "-Wall", "-Wextra",
+                 "-Werror", "-I", PORT, "-I", ROOT / "src/infiltratr-common/include",
+                 ROOT / "tests" / test_source, "-ldl", "-o", harness])
+            image = work / (name + ".img")
+            with image.open("wb") as disk:
+                disk.truncate(72 * 1024 * 1024)
+            run([harness, module, image, *args])
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -204,8 +212,8 @@ def release_source_files():
             q.startswith("native/include/") or
             q.startswith("standalone/") or q.startswith("docs/") or
             q in ("README.md", "VERSION", "MIGRATION-PROVENANCE.md",
-                  "src/infiltratr-common/LICENSE", "tests/common_v1_abi_test.c", f"tests/fat{WIDTH}_module_test.c",
-                  "tests/fatfs_v4_format_test.c")
+                  "src/infiltratr-common/LICENSE", "tests/common_v2_abi_test.c", f"tests/fat{WIDTH}_module_test.c",
+                  "tests/fatfs_common_format_test.c", "tests/fatfs_v4_format_test.c")
         )
         if selected and (ROOT / p).is_file() and not (ROOT / p).is_symlink():
             chosen.append(p)

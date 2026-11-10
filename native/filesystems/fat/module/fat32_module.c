@@ -22,7 +22,7 @@ static int read_at(const IfsFat32Io *io, uint64_t pos,
         return -1;
     return io->read_at(io->context, pos, out, size) == 0 ? 0 : -1;
 }
-static int probe(const IfsFat32Io *io, IfsFat32Volume *out)
+int ifs_fat32_probe(const IfsFat32Io *io, IfsFat32Volume *out)
 {
     uint8_t boot[512], reserved[8];
     if (!io || !out || read_at(io, 0, boot, sizeof boot) != 0 ||
@@ -109,7 +109,7 @@ static int next_data_cluster(const IfsFat32Io *io,
     return fat_entry(io, v, current, next) == 0 &&
            cluster_valid(v, *next) ? 0 : -1;
 }
-static int root_file(const IfsFat32Io *io, const IfsFat32Volume *v,
+int ifs_fat32_root_file(const IfsFat32Io *io, const IfsFat32Volume *v,
                      uint32_t nth, IfsFat32File *file)
 {
     if (!io || !v || !file || v->cluster_bytes % 32u) return -1;
@@ -159,7 +159,7 @@ static int root_file(const IfsFat32Io *io, const IfsFat32Volume *v,
     }
     return -1; /* cyclic / implausibly long root directory chain */
 }
-static int validate_chain(const IfsFat32Io *io, const IfsFat32Volume *v,
+int ifs_fat32_root_file_fragments(const IfsFat32Io *io, const IfsFat32Volume *v,
                           const IfsFat32File *f, uint32_t *fragments)
 {
     if (!io || !v || !f || !fragments || (f->attributes & 0x10u)) return -1;
@@ -187,12 +187,12 @@ static int validate_chain(const IfsFat32Io *io, const IfsFat32Volume *v,
     }
     return -1;
 }
-static int read_file(const IfsFat32Io *io, const IfsFat32Volume *v,
+int ifs_fat32_read_file(const IfsFat32Io *io, const IfsFat32Volume *v,
                      const IfsFat32File *f, uint64_t position,
                      void *buffer, uint32_t length)
 {
     uint32_t fragments;
-    if (!buffer || validate_chain(io, v, f, &fragments) != 0 ||
+    if (!buffer || ifs_fat32_root_file_fragments(io, v, f, &fragments) != 0 ||
         position > f->size_bytes || length > (uint64_t)f->size_bytes - position)
         return -1;
     if (!length) return 0;
@@ -219,18 +219,4 @@ static int read_file(const IfsFat32Io *io, const IfsFat32Volume *v,
         }
     }
     return 0;
-}
-/* Non-executed format identity for safe single-file selection. */
-__attribute__((used,section(".ifsmeta")))
-static const char ifs_module_format_identity[] = "IFS-MODULE:fat32:1";
-static const IfsFat32Module module = {
-    IFS_FAT32_ABI_VERSION, sizeof(IfsFat32Module), "fat32", "FAT32",
-    IFS_FAT32_CAP_PROBE | IFS_FAT32_CAP_ROOT_83 |
-    IFS_FAT32_CAP_FILE_READ | IFS_FAT32_CAP_ROOT_FRAGMENT_COUNT,
-    probe, root_file, read_file, validate_chain
-};
-__attribute__((visibility("default")))
-const IfsFat32Module *infiltrator_filesystem_module_v1(void)
-{
-    return &module;
 }
