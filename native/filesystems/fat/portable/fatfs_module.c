@@ -9,6 +9,7 @@
 #include "diskio.h"
 #include "fat32_module.h"
 #include "infiltratr/filesystem_module_v2.h"
+#include <string.h>
 
 #if defined(IFS_FATFS_ONLY) && IFS_FATFS_ONLY == 12
 #define REQUIRED_FS FS_FAT12
@@ -804,12 +805,30 @@ static int v2_sync(void *volume) {
     return common_session.host.flush(common_session.host.context) == 0 ?
            IFS_FS_OK : IFS_FS_IO_ERROR;
 }
+static int v2_label(void *mounted, char *out, uint32_t capacity, uint32_t *bytes)
+{
+    if (!common_session_valid(mounted) || !out || !capacity || !bytes)
+        return IFS_FS_INVALID;
+
+    /* FatFs converts the FAT label to UTF-8. Eleven characters fit even
+     * when every character requires the maximum UTF-8 width. */
+    char label[64] = {0};
+    if (f_getlabel("0:", label, NULL) != FR_OK)
+        return IFS_FS_IO_ERROR;
+    const size_t length = strlen(label);
+    if (length >= capacity)
+        return IFS_FS_NO_SPACE;
+    memcpy(out, label, length + 1);
+    *bytes = (uint32_t)length;
+    return IFS_FS_OK;
+}
 __attribute__((used,section(".ifsmeta")))
 static const char common_v2_identity[]="IFS-MODULE:fat32:common2";
 static const IfsFsVolumeOpsV2 common_volume={
     .header={IFS_FS_GROUP_ABI_V2,sizeof(IfsFsVolumeOpsV2),
              IFS_FS_GROUP_VOLUME,0u,
-             IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT},
+             IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_LABEL_GET|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT},
+    .label=v2_label,
     .query=v2_query,
     .sync=v2_sync,
     .format=common_format

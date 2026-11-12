@@ -142,7 +142,6 @@ jobs:
           p.write_text(p.read_text().replace('"fat16"', '"fat32"'))
           p=boot/'tests/test_so_boot.py'
           s=p.read_text().replace('FAT16', 'FAT32').replace('fat16', 'fat32')
-          s=s.replace('volume NATIVEONLY', 'volume fat32')
           s=s.replace('"mkfs.fat", "-F", "16", "-I"', '"mkfs.fat", "-F", "32", "-s", "1", "-I"')
           p.write_text(s)
           PY
