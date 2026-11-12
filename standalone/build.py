@@ -4,7 +4,6 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
-import struct
 import sys
 import tempfile
 
@@ -16,15 +15,14 @@ MOD = BASE / "module"
 PORT = BASE / "portable"
 DEF = BASE / "defrag"
 SOURCES = [MOD / "fat32_module.c"] + [
-    PORT / name for name in ("fatfs_module.c", "fatfs_boot.c", "ff.c", "ffunicode.c", "fatfs_libc.c")
+    PORT / name for name in ("fatfs_module.c", "ff.c", "ffunicode.c", "fatfs_libc.c")
 ] + [DEF / name for name in ("writer.c", "fat_analysis.c", "fat_directory.c",
     "fat_relayout.c", "fat_io.c", "fat_journal.c", "fat_relocation.c",
     "fat_volume.c", "fat_defrag_module.c")]
-INCLUDES = [MOD, PORT, DEF, DEF / "host", ROOT / "native/include",
+INCLUDES = [MOD, PORT, DEF, DEF / "host",
             ROOT / "src/infiltratr-common/include"]
 EXPORTS = ("infiltrator_filesystem_api_v2", "infiltrator_filesystem_module_v3",
-           "infiltrator_filesystem_module_v4", "infiltrator_filesystem_defrag_v1",
-           "infiltrator_filesystem_boot_v1")
+           "infiltrator_filesystem_module_v4", "infiltrator_filesystem_defrag_v1")
 
 def run(args):
     subprocess.run([str(a) for a in args], check=True)
@@ -46,15 +44,12 @@ def inspect(module):
     if f"IFS-MODULE:fat{WIDTH}:common2" not in meta:
         raise RuntimeError("Missing Common V2 identity")
     for retired in ("infiltrator_filesystem_api_v1",
-                    "infiltrator_filesystem_module_v1"):
+                    "infiltrator_filesystem_module_v1",
+                    "infiltrator_filesystem_boot_v1"):
         if retired in exports:
-            raise RuntimeError("Retired Common V1 export: " + retired)
+            raise RuntimeError("Retired filesystem export: " + retired)
     if "(NEEDED)" in subprocess.check_output(["readelf", "-d", str(module)], text=True):
         raise RuntimeError("Unexpected runtime shared-library dependency")
-    manifest = struct.pack("<8sIIII16s32s", b"IFSBOOT1", 72, 1, 62, 1,
-                           b"fat32", b"FAT32")
-    if manifest not in module.read_bytes():
-        raise RuntimeError("Missing generic Boot manifest")
     relocations = subprocess.check_output(["readelf", "-Wr", str(module)], text=True)
     for line in relocations.splitlines():
         if "R_X86_64_" in line and "R_X86_64_RELATIVE" not in line:
@@ -209,7 +204,6 @@ def release_source_files():
         selected = (
             q.startswith("native/filesystems/fat/") or
             q.startswith("src/infiltratr-common/include/") or
-            q.startswith("native/include/") or
             q.startswith("standalone/") or q.startswith("docs/") or
             q in ("README.md", "VERSION", "MIGRATION-PROVENANCE.md",
                   "src/infiltratr-common/LICENSE", "tests/common_v2_abi_test.c", f"tests/fat{WIDTH}_module_test.c",

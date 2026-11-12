@@ -116,7 +116,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Infiltrator-Projects/Boot
-          ref: dbc6a710dbe88b78318c8b9afbf47bb64e8706b3
+          ref: 93aed1b866f502ac61f6f23a20c524c7fad62812
           path: .qualification/Boot
       - name: Install actual OVMF, kernel and ELF qualification tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential binutils python3 gnu-efi qemu-system-x86 ovmf dosfstools mtools busybox-static cpio
@@ -142,6 +142,7 @@ jobs:
           p.write_text(p.read_text().replace('"fat16"', '"fat32"'))
           p=boot/'tests/test_so_boot.py'
           s=p.read_text().replace('FAT16', 'FAT32').replace('fat16', 'fat32')
+          s=s.replace('volume NATIVEONLY', 'volume fat32')
           s=s.replace('"mkfs.fat", "-F", "16", "-I"', '"mkfs.fat", "-F", "32", "-s", "1", "-I"')
           p.write_text(s)
           PY

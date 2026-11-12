@@ -7,7 +7,7 @@ eventual kernel-side shared-object loader is not yet implemented.
 
 ## Proven source and functions
 
-- Original FAT32 V1 uses authentic FAT32 BPB, 28-bit entries, cluster-chain root,
+- The original FAT32 reader uses authentic FAT32 BPB, 28-bit entries, cluster-chain root,
   fragmented-file reads and strict foreign-width/malformed-image rejection.
 - FatFs V3/V4 owns format, directory/file create/read/write/truncate, long names,
   attributes, timestamps, volume space and explicit flush.
@@ -15,7 +15,7 @@ eventual kernel-side shared-object loader is not yet implemented.
   into FAT32.so. It owns FAT32 relocation, exact 10% Growth Defrag, journals and
   recovery. The production worker provides only generic raw I/O, target safety
   and durable journal host services.
-- Generic Boot V1 uses the same FatFs state, read-only partition-relative I/O,
+- The Common V2 firmware path uses the same FatFs state, read-only partition-relative I/O,
   a checked `IFSBOOT1` manifest, relative relocations and no runtime imports.
   Boot's own released ELF/UEFI implementation is not forked.
 - Source-embedded native RUN includes ABI headers, the defragmenter engine and
