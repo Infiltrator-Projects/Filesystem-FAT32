@@ -203,6 +203,14 @@ jobs:
           python3 standalone/check-package.py "$RUNNER_TEMP"/manual/*.deb --profile portable --kernel-release 6.12.107
           dpkg-deb -x "$RUNNER_TEMP"/manual/*.deb "$RUNNER_TEMP/manual-root"
           dpkg-deb -x dist/*.deb "$RUNNER_TEMP/portable-root"
+          # Verify the exact package and source-embedded native RUN both
+          # carry the independently implemented Common V2 entry point.
+          # The old immutable release assets predate its source code.
+          for root in "$RUNNER_TEMP/portable-root" "$RUNNER_TEMP/manual-root"; do
+            so="$root/System/Filesystems/FAT32.so"
+            test -s "$so"
+            nm -D --defined-only "$so" | grep -F 'infiltrator_filesystem_api_v2'
+          done
           repository=$(python3 -c 'import sys; sys.path.insert(0,"standalone"); import build; print(build.REPO)')
           identifier=$(printf '%s' "$repository" | sed 's/^Filesystem-//' | tr '[:upper:]' '[:lower:]')
           manual=$(python3 -c 'import sys; sys.path.insert(0,"standalone"); import build; print(build.PDF.name)')
