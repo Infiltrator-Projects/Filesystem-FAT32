@@ -100,8 +100,18 @@ int main(int argc,char **argv)
     io.capabilities=IFS_FS_HOST_EXCLUSIVE|IFS_FS_HOST_DURABLE;
     io.write_at=wr;io.flush=flush;
 
-    if(vol->format(&io,32u,NULL,0u)!=IFS_FS_OK || !disk.writes ||
-       fs->probe(&io,&variant)!=IFS_FS_OK || variant!=32u)
+    {
+        volatile size_t prefix_bytes=IFS_FS_HOST_V2_BASE_BYTES;
+        IfsFsHostRuntimeV2 *prefix=malloc(prefix_bytes);
+        if(!prefix)return fail("short V2 host allocation for formatting");
+        memcpy(prefix,&io,IFS_FS_HOST_V2_BASE_BYTES);
+        prefix->structure_bytes=IFS_FS_HOST_V2_BASE_BYTES;
+        if(vol->format(prefix,32u,NULL,0u)!=IFS_FS_OK || !disk.writes ||
+           fs->probe(prefix,&variant)!=IFS_FS_OK || variant!=32u)
+            return fail("short V2 host format and probe");
+        free(prefix);
+    }
+    if(fs->probe(&io,&variant)!=IFS_FS_OK || variant!=32u)
         return fail("blank FAT32 format and probe");
 
     IfsFsVolumeInfoV2 info={0};
