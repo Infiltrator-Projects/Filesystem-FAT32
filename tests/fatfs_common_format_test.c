@@ -107,6 +107,16 @@ int main(int argc,char **argv)
     IfsFsVolumeInfoV2 info={0};
     info.structure_bytes=sizeof info;
     void *session=NULL;
+    volatile size_t short_bytes=IFS_FS_HOST_V2_BASE_BYTES;
+    IfsFsHostRuntimeV2 *short_host=malloc(short_bytes);
+    if(!short_host)return fail("short V2 host allocation");
+    memcpy(short_host,&io,IFS_FS_HOST_V2_BASE_BYTES);
+    short_host->structure_bytes=IFS_FS_HOST_V2_BASE_BYTES;
+    if(fs->mount(short_host,&session,&info)!=IFS_FS_OK || !session ||
+       fs->unmount(session)!=IFS_FS_OK)
+        return fail("mount with original short V2 host");
+    free(short_host);
+    session=NULL;info.structure_bytes=sizeof info;
     if(fs->mount(&io,&session,&info)!=IFS_FS_OK || !session ||
        info.variant!=32u || info.free_bytes>info.total_bytes)
         return fail("mount formatted FAT32 image");
