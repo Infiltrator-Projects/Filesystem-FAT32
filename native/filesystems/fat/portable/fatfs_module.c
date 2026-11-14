@@ -466,6 +466,10 @@ const IfsFatfsModuleV4 *infiltrator_filesystem_module_v4(void) {return &module_v
 /* Common V1 delegates to the canonical FAT32 engine, without duplicating it.
  * The FAT12 integrity scanner validates geometry; one FatFs engine owns
  * all mounts, file operations and formatting. No legacy API tables. */
+/* Format probes also issue short byte reads, so every engine request must
+ * pass through the bounded sector adapter required by the Common V2 host. */
+static int common_read(void *context, uint64_t offset,
+                       void *destination, uint32_t bytes);
 static int common_probe(const IfsFsHostRuntimeV2 *host,
                         uint32_t *detected_variant)
 {
@@ -474,8 +478,8 @@ static int common_probe(const IfsFsHostRuntimeV2 *host,
     if (!ifs_fs_host_v2_valid(host) || !detected_variant ||
         host->volume_bytes < 512u)
         return IFS_FS_INVALID;
-    input.read_at = host->read_at;
-    input.context = host->context;
+    input.read_at = common_read;
+    input.context = (void *)host;
     input.device_bytes = host->volume_bytes;
     if (ifs_fat32_probe(&input, &geometry) != 0)
         return IFS_FS_NOT_FOUND;
@@ -486,13 +490,13 @@ static int common_read(void *context, uint64_t offset,
                        void *destination, uint32_t bytes)
 {
     const IfsFsHostRuntimeV2 *host = (const IfsFsHostRuntimeV2 *)context;
-    return host->read_at(host->context, offset, destination, bytes);
+    return ifs_fs_host_read_bytes_v2(host, offset, destination, bytes)==IFS_FS_OK ? 0 : -1;
 }
 static int common_write(void *context, uint64_t offset,
                         const void *source, uint32_t bytes)
 {
     const IfsFsHostRuntimeV2 *host = (const IfsFsHostRuntimeV2 *)context;
-    return host->write_at(host->context, offset, source, bytes);
+    return ifs_fs_host_write_bytes_v2(host, offset, source, bytes)==IFS_FS_OK ? 0 : -1;
 }
 static int common_flush(void *context)
 {
@@ -558,7 +562,7 @@ static int common_guarded_write(void *context, uint64_t at,
     if ((host->capabilities & IFS_FS_HOST_READ_ONLY) ||
         !(host->capabilities & IFS_FS_HOST_EXCLUSIVE) || !host->write_at)
         return -1;
-    return host->write_at(host->context, at, data, length);
+    return common_write(context, at, data, length);
 }
 static int common_guarded_flush(void *context)
 {
@@ -611,8 +615,8 @@ static int common_mount(const IfsFsHostRuntimeV2 *host, void **context,
     *context=0;
     if (common_session.mounted || selected || bound ||
         common_session.serial == UINTPTR_MAX) return IFS_FS_BUSY;
-    input.read_at=host->read_at;
-    input.context=host->context;
+    input.read_at=common_read;
+    input.context=(void *)host;
     input.device_bytes=host->volume_bytes;
     if (ifs_fat32_probe(&input,&geometry)!=0)
         return IFS_FS_NOT_FOUND;
