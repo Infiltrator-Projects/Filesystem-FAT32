@@ -24,6 +24,11 @@ static int rd(void *u,uint64_t at,void *p,uint32_t n)
     return bounds(d,at,n) &&
         pread(d->fd,p,n,(off_t)at)==(ssize_t)n?0:-1;
 }
+static int fail_read(void *u,uint64_t at,void *p,uint32_t n)
+{
+    (void)u;(void)at;(void)p;(void)n;
+    return -1;
+}
 static int wr(void *u,uint64_t at,const void *p,uint32_t n)
 {
     Disk *d=u;
@@ -88,6 +93,16 @@ int main(int argc,char **argv)
     io.allocate=allocate_at;
     io.release=release_at;
     uint32_t variant=0;
+    IfsFsHostRuntimeV2 failed_host=io;
+    failed_host.read_at=fail_read;
+    IfsFsVolumeInfoV2 failed_info={.structure_bytes=sizeof(failed_info)};
+    void *failed_mount=(void *)(uintptr_t)1u;
+    variant=99u;
+    if(fs->probe(&failed_host,&variant)!=IFS_FS_IO_ERROR ||
+       variant!=0u ||
+       fs->mount(&failed_host,&failed_mount,&failed_info)!=IFS_FS_IO_ERROR ||
+       failed_mount!=NULL || disk.writes)
+        return fail("read failure mistaken for unknown FAT32 media");
 
     if(vol->format(&io,16u,NULL,0u)!=IFS_FS_UNSUPPORTED || disk.writes)
         return fail("foreign format must not write");
