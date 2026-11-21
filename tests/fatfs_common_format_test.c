@@ -186,6 +186,27 @@ int main(int argc,char **argv)
        entry.size_bytes!=1000u)
         return fail("create/write/read/Unicode/rename/truncate");
 
+    {
+        const IfsFsDefragOpsV2 *defrag=
+            (const IfsFsDefragOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_DEFRAG);
+        IfsFsExtentV2 spans[8]={{0}};
+        uint32_t count=UINT32_MAX;
+        if (!defrag || defrag->header.capabilities!=IFS_FS_DEFRAG_MAP ||
+            !defrag->map || defrag->plan || defrag->execute ||
+            defrag->verify || defrag->recover || defrag->release_plan ||
+            defrag->map(session,renamed,0u,spans,8u,&count)!=IFS_FS_OK ||
+            !count || spans[0].logical_offset!=0u ||
+            spans[0].physical_offset>=disk.bytes ||
+            spans[0].length<1000u ||
+            defrag->map(session,renamed,1u,spans,8u,&count)!=IFS_FS_END ||
+            count!=0u)
+            return fail("real Common V2 FAT extent map and no fabricated mutation");
+        count=UINT32_MAX;
+        if(defrag->map(session,"/../invalid",0u,spans,8u,&count)!=
+               IFS_FS_INVALID || count!=0u)
+            return fail("V2 FAT map accepted unsafe filesystem path");
+    }
+
     if(vol->sync(session)!=IFS_FS_OK ||
        fs->unmount(session)!=IFS_FS_OK)
         return fail("new-media FAT integrity or unmount");
