@@ -202,6 +202,11 @@ int main(int argc,char **argv)
             count!=0u)
             return fail("real Common V2 FAT extent map and no fabricated mutation");
         count=UINT32_MAX;
+        if (defrag->map(session,"/",0u,spans,8u,&count)!=IFS_FS_OK ||
+            count==0u || spans[0].physical_offset>=disk.bytes ||
+            spans[0].length==0u)
+            return fail("Common V2 native allocation MAP rejected mounted volume");
+        count=UINT32_MAX;
         if(defrag->map(session,"/../invalid",0u,spans,8u,&count)!=
                IFS_FS_INVALID || count!=0u)
             return fail("V2 FAT map accepted unsafe filesystem path");
