@@ -864,7 +864,7 @@ static const IfsFsGroupHeaderV2 *common_query(
 }
 static const IfsFsModuleApiV2 common_v2={
     IFS_FS_COMMON_ABI_V2,sizeof(IfsFsModuleApiV2),"fat32",
-    IFS_FS_PROFILE_HOSTED|IFS_FS_PROFILE_FREESTANDING,
+    IFS_FS_PROFILE_HOSTED|IFS_FS_PROFILE_FREESTANDING|IFS_FS_PROFILE_FIRMWARE,
     IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE)|IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME),
     common_query
 };

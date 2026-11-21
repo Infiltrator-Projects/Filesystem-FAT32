@@ -21,6 +21,12 @@ int main(int argc,char **argv)
     memcpy(&resolve,&symbol,sizeof(resolve));
     const IfsFsModuleApiV2 *api=resolve?resolve():NULL;
     if(!ifs_fs_api_v2_valid(api,"fat32"))return 5;
+    /* This provider is independently freestanding and has no runtime
+     * imports, so firmware hosts must discover it by the V2 profile bit. */
+    if ((api->runtime_profiles & (IFS_FS_PROFILE_HOSTED |
+         IFS_FS_PROFILE_FREESTANDING | IFS_FS_PROFILE_FIRMWARE)) !=
+         (IFS_FS_PROFILE_HOSTED | IFS_FS_PROFILE_FREESTANDING |
+          IFS_FS_PROFILE_FIRMWARE)) return 14;
     if(api->group_mask!=(IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE)|
                          IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME)) ||
        (api->runtime_profiles & (IFS_FS_PROFILE_KERNEL|IFS_FS_PROFILE_FIRMWARE)))
