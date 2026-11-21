@@ -158,7 +158,7 @@ def test(module, workspace=None):
             with image.open("wb") as disk:
                 disk.truncate(72 * 1024 * 1024)
             if "v4" in name:
-                if legacy is None: legacy = test_only_legacy_module(module)
+                if legacy is None: legacy = test_only_legacy_module(work / "FAT32.so")
                 run([harness, legacy, image, *args])
             else:
                 run([harness, module, image, *args])
