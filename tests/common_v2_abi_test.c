@@ -29,7 +29,7 @@ int main(int argc,char **argv)
           IFS_FS_PROFILE_FIRMWARE)) return 14;
     if(api->group_mask!=(IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE)|
                          IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME)) ||
-       (api->runtime_profiles & (IFS_FS_PROFILE_KERNEL|IFS_FS_PROFILE_FIRMWARE)))
+       (api->runtime_profiles & IFS_FS_PROFILE_KERNEL))
         return 6;
     const IfsFsCoreOpsV2 *core=
         (const IfsFsCoreOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_CORE);
