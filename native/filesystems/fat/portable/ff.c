@@ -1249,6 +1249,12 @@ static DWORD get_fat (		/* 0xFFFFFFFF:Disk error, 1:Internal error, 2..0x7FFFFFF
 
 
 
+/* Common V2 extent map traverses the native FAT chain used by f_read(). */
+DWORD ifs_fatfs_native_next_cluster (FIL* file, DWORD cluster)
+{
+	return file && file->obj.fs ? get_fat(&file->obj, cluster) : 1u;
+}
+
 #if !FF_FS_READONLY
 /*-----------------------------------------------------------------------*/
 /* FAT access - Change value of an FAT entry                             */
