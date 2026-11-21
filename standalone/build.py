@@ -21,8 +21,7 @@ SOURCES = [MOD / "fat32_module.c"] + [
     "fat_volume.c", "fat_defrag_module.c")]
 INCLUDES = [MOD, PORT, DEF, DEF / "host",
             ROOT / "src/infiltratr-common/include"]
-EXPORTS = ("infiltrator_filesystem_api_v2", "infiltrator_filesystem_module_v3",
-           "infiltrator_filesystem_module_v4", "infiltrator_filesystem_defrag_v1")
+EXPORTS = ("infiltrator_filesystem_api_v2", "infiltrator_filesystem_defrag_v1")
 
 def run(args):
     subprocess.run([str(a) for a in args], check=True)
@@ -39,8 +38,8 @@ def inspect(module):
             raise RuntimeError("Missing ABI export: " + symbol)
     meta = subprocess.check_output(["readelf", "-p", ".ifsmeta", str(module)], text=True)
     for api in (3, 4):
-        if f"IFS-MODULE:fat{WIDTH}:{api}" not in meta:
-            raise RuntimeError("Missing exact FAT format identity")
+        if f"IFS-MODULE:fat{WIDTH}:{api}" in meta:
+            raise RuntimeError("Unexpected historical filesystem ABI identity")
     if f"IFS-MODULE:fat{WIDTH}:common2" not in meta:
         raise RuntimeError("Missing Common V2 identity")
     for retired in ("infiltrator_filesystem_api_v1",
@@ -54,7 +53,10 @@ def inspect(module):
     for line in relocations.splitlines():
         if "R_X86_64_" in line and "R_X86_64_RELATIVE" not in line:
             raise RuntimeError("Unsupported Boot relocation: " + line)
-    for line in subprocess.check_output(["readelf", "--dyn-syms", "-W", str(module)], text=True).splitlines():
+    dynamic = subprocess.check_output(["readelf", "--dyn-syms", "-W", str(module)], text=True)
+    for obsolete in ("infiltrator_filesystem_module_v3", "infiltrator_filesystem_module_v4"):
+        if obsolete in dynamic: raise RuntimeError("Historical filesystem API exported: "+obsolete)
+    for line in dynamic.splitlines():
         fields = line.split()
         if "UND" in fields and fields[0] != "0:":
             raise RuntimeError("Undefined Boot import: " + line)
@@ -72,6 +74,23 @@ def compile_module(module, flags, training=False):
     if not training:
         inspect(module)
 
+
+
+def test_only_legacy_module(module):
+    """Build a disposable ABI fixture; never install or publish this DSO."""
+    target=module.parent / "FAT32-legacy-tests.so"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    flags=["-std=c11","-O2","-fPIC","-mno-red-zone","-fno-stack-protector",
+           "-fno-builtin","-ffreestanding","-fvisibility=hidden",
+           "-D_GNU_SOURCE","-D_FILE_OFFSET_BITS=64",
+           "-DIFS_FATFS_ONLY=32","-DIFS_FAT32_INDEPENDENT=1",
+           "-DIFS_FAT_DEFRAG_BITS=32","-DIFS_FATFS_LEGACY_TEST_ABI=1"]
+    args=[os.environ.get("CC","cc"),*flags]
+    for directory in INCLUDES: args+=["-I",directory]
+    args+=["-nostdlib","-shared","-Wl,-Bsymbolic","-Wl,-z,defs",
+           "-Wl,-z,noexecstack","-o",target,*SOURCES]
+    run(args)
+    return target
 
 def train_profile(module, workspace):
     """Exercise V1 reader and V3/V4 FAT32 writes on disposable media."""
@@ -112,6 +131,7 @@ def build(profile, module):
 
 def test(module, workspace=None):
     # The independent FAT32 parser is internal, not a second public ABI.
+    legacy = None
     exe = module.parent / "fat32-module-test"
     run([os.environ.get("CC", "cc"), "-std=c11", "-O2", "-Wall", "-Wextra",
          "-Werror", "-I", MOD, ROOT / "tests/fat32_module_test.c",
@@ -137,7 +157,11 @@ def test(module, workspace=None):
             image = work / (name + ".img")
             with image.open("wb") as disk:
                 disk.truncate(72 * 1024 * 1024)
-            run([harness, module, image, *args])
+            if "v4" in name:
+                if legacy is None: legacy = test_only_legacy_module(module)
+                run([harness, legacy, image, *args])
+            else:
+                run([harness, module, image, *args])
 
 
 def main():
@@ -145,8 +169,11 @@ def main():
     parser.add_argument("--profile", choices=("portable", "aggressive"), default="portable")
     parser.add_argument("--output", type=Path, default=ROOT / "build" / NAME)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--test-legacy-only", action="store_true")
     args = parser.parse_args()
     module = args.output.resolve()
+    if args.test_legacy_only:
+        print("TEST-ONLY ABI FIXTURE",test_only_legacy_module(module));return
     flags = build(args.profile, module)
     if args.check:
         test(module)
