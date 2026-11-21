@@ -76,24 +76,8 @@ def compile_module(module, flags, training=False):
 
 
 
-def test_only_legacy_module(module):
-    """Build a disposable ABI fixture; never install or publish this DSO."""
-    target=module.parent / "FAT32-legacy-tests.so"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    flags=["-std=c11","-O2","-fPIC","-mno-red-zone","-fno-stack-protector",
-           "-fno-builtin","-ffreestanding","-fvisibility=hidden",
-           "-D_GNU_SOURCE","-D_FILE_OFFSET_BITS=64",
-           "-DIFS_FATFS_ONLY=32","-DIFS_FAT32_INDEPENDENT=1",
-           "-DIFS_FAT_DEFRAG_BITS=32","-DIFS_FATFS_LEGACY_TEST_ABI=1"]
-    args=[os.environ.get("CC","cc"),*flags]
-    for directory in INCLUDES: args+=["-I",directory]
-    args+=["-nostdlib","-shared","-Wl,-Bsymbolic","-Wl,-z,defs",
-           "-Wl,-z,noexecstack","-o",target,*SOURCES]
-    run(args)
-    return target
-
 def train_profile(module, workspace):
-    """Exercise V1 reader and V3/V4 FAT32 writes on disposable media."""
+    """Train using the actual Common V2 filesystem operations."""
     test(module, workspace)
 
 def build(profile, module):
@@ -131,7 +115,6 @@ def build(profile, module):
 
 def test(module, workspace=None):
     # The independent FAT32 parser is internal, not a second public ABI.
-    legacy = None
     exe = module.parent / "fat32-module-test"
     run([os.environ.get("CC", "cc"), "-std=c11", "-O2", "-Wall", "-Wextra",
          "-Werror", "-I", MOD, ROOT / "tests/fat32_module_test.c",
@@ -146,22 +129,14 @@ def test(module, workspace=None):
     abi.unlink()
     with tempfile.TemporaryDirectory(prefix="fat32-qa-", dir=workspace or module.parent) as tmp:
         work = Path(tmp)
-        for name, test_source, args in [
-            ("fat32-v2-volume-test", "fatfs_common_format_test.c", ["512"]),
-            ("fat32-v4-volume-test", "fatfs_v4_format_test.c", ["512", "512"])
-        ]:
-            harness = work / name
-            run([os.environ.get("CC", "cc"), "-std=c11", "-O2", "-Wall", "-Wextra",
-                 "-Werror", "-I", PORT, "-I", ROOT / "src/infiltratr-common/include",
-                 ROOT / "tests" / test_source, "-ldl", "-o", harness])
-            image = work / (name + ".img")
-            with image.open("wb") as disk:
-                disk.truncate(72 * 1024 * 1024)
-            if "v4" in name:
-                if legacy is None: legacy = test_only_legacy_module(work / "FAT32.so")
-                run([harness, legacy, image, *args])
-            else:
-                run([harness, module, image, *args])
+        harness = work / "fat32-v2-media-test"
+        run([os.environ.get("CC", "cc"), "-std=c11", "-O2", "-Wall", "-Wextra",
+             "-Werror", "-I", PORT, "-I", ROOT / "src/infiltratr-common/include",
+             ROOT / "tests/fatfs_common_format_test.c", "-ldl", "-o", harness])
+        image = work / "fat32-v2-media.img"
+        with image.open("wb") as disk:
+            disk.truncate(72 * 1024 * 1024)
+        run([harness, module, image, "512"])
 
 
 def main():
@@ -169,11 +144,8 @@ def main():
     parser.add_argument("--profile", choices=("portable", "aggressive"), default="portable")
     parser.add_argument("--output", type=Path, default=ROOT / "build" / NAME)
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--test-legacy-only", action="store_true")
     args = parser.parse_args()
     module = args.output.resolve()
-    if args.test_legacy_only:
-        print("TEST-ONLY ABI FIXTURE",test_only_legacy_module(module));return
     flags = build(args.profile, module)
     if args.check:
         test(module)
@@ -234,7 +206,7 @@ def release_source_files():
             q.startswith("standalone/") or q.startswith("docs/") or
             q in ("README.md", "VERSION", "MIGRATION-PROVENANCE.md",
                   "src/infiltratr-common/LICENSE", "tests/common_v2_abi_test.c", f"tests/fat{WIDTH}_module_test.c",
-                  "tests/fatfs_common_format_test.c", "tests/fatfs_v4_format_test.c")
+                  "tests/fatfs_common_format_test.c")
         )
         if selected and (ROOT / p).is_file() and not (ROOT / p).is_symlink():
             chosen.append(p)

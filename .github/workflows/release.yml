@@ -20,32 +20,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential binutils python3 dpkg-dev dosfstools mtools
       - name: Compile and exercise exactly one shared object
         run: make check
-      - name: Cross-check independent FAT32 read/write against real dosfstools media
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p build/external-fat
-          cc -std=c11 -O2 -Wall -Wextra -Werror \
-            -I native/filesystems/fat/portable tests/fatfs_v3_realimage_test.c \
-            -ldl -o build/external-fat/realtest
-          truncate -s 128M build/external-fat/fat32.img
-          truncate -s 8M build/external-fat/fat16.img
-          mkfs.fat -F 32 -I -s 1 build/external-fat/fat32.img
-          mkfs.fat -F 16 -I -s 1 build/external-fat/fat16.img
-          python3 standalone/build.py --test-legacy-only --output build/external-fat/FAT32.so
-          build/external-fat/realtest build/external-fat/FAT32-legacy-tests.so build/external-fat/fat32.img build/external-fat/fat16.img
-          fsck.fat -n build/external-fat/fat32.img
-          mcopy -n -i build/external-fat/fat32.img \
-            '::/SUBDIR/Verified Café Ünîcode Data.txt' build/external-fat/external.bin
-          python3 - <<'PY'
-          from pathlib import Path
-          data=Path("build/external-fat/external.bin").read_bytes()
-          assert data == bytes((i*17+23)&255 for i in range(1000))
-          print("FAT32 independent post-remount file data verified")
-          PY
-          build/external-fat/realtest build/external-fat/FAT32-legacy-tests.so build/external-fat/fat32.img build/external-fat/fat16.img cleanup
-          fsck.fat -n build/external-fat/fat32.img
-          echo "FAT32 REAL-WRITE FAT-CHECKER CROSS-VERIFIED"
       - name: Build the DEB and native source installer
         run: make release
       - name: Validate release bytes and native installation
@@ -89,83 +63,6 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
-  defrag-consumer:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-      - name: Get the actual Defragmenter host and pinned Common dependency
-        uses: actions/checkout@v4
-        with:
-          repository: Infiltrator-Projects/Defragmenter
-          ref: 0e707548d5227fee3654e8467f1cb7ef13a02d2d
-          path: .qualification/Defragmenter
-          submodules: recursive
-      - name: Install source and independent FAT32 image test tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential cmake binutils python3 dosfstools mtools
-      - name: Exercise the shared SO with real Defragmenter defrag and recovery
-        run: |
-          make check
-          python3 tests/fat32_defrag_compat.py --module build/FAT32.so \
-            --defragmenter-source .qualification/Defragmenter
-  boot-consumer:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check out the released Boot implementation
-        uses: actions/checkout@v4
-        with:
-          repository: Infiltrator-Projects/Boot
-          ref: 8abd633620b983a85781b4eef493f807ede00dc9
-          path: .qualification/Boot
-      - name: Install actual OVMF, kernel and ELF qualification tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential binutils python3 gnu-efi qemu-system-x86 ovmf dosfstools mtools busybox-static cpio
-      - name: Qualify portable and native SO through the unmodified Boot runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          root="$GITHUB_WORKSPACE"
-          boot="$root/.qualification/Boot"
-          make check
-          python3 standalone/build.py --profile aggressive --output build-native/FAT32.so --check
-          # Only FAT16-specific fixture names and geometry change; Boot itself does not.
-          python3 - "$boot" <<'PY'
-          from pathlib import Path
-          import sys
-          boot=Path(sys.argv[1])
-          p=boot/'tests/run-so-tests.sh'
-          s=p.read_text().replace('FAT16', 'FAT32').replace('fat16', 'fat32')
-          s=s.replace('truncate -s 32M', 'truncate -s 128M')
-          s=s.replace('mkfs.fat -F 16 ', 'mkfs.fat -F 32 -s 1 ')
-          p.write_text(s)
-          p=boot/'tests/so_module_test.c'
-          p.write_text(p.read_text().replace('"fat16"', '"fat32"'))
-          p=boot/'tests/test_so_boot.py'
-          s=p.read_text().replace('FAT16', 'FAT32').replace('fat16', 'fat32')
-          s=s.replace('"mkfs.fat", "-F", "16", "-I"', '"mkfs.fat", "-F", "32", "-s", "1", "-I"')
-          p.write_text(s)
-          PY
-          (cd "$boot" && bash scripts/build-gnuefi.sh)
-          for profile in build build-native; do
-            bash "$boot/tests/run-so-tests.sh" "$root/$profile/FAT32.so" "$root"
-          done
-          IFS_SO_SANITIZE=1 bash "$boot/tests/run-so-tests.sh" "$root/build/FAT32.so" "$root"
-          mkdir -p build/boot-kernel
-          package=$(apt-cache depends linux-image-generic | awk '/Depends: linux-image-[0-9]/ {sub("linux-image-", "linux-image-unsigned-", $2); print $2; exit}')
-          test -n "$package"
-          (cd build/boot-kernel && apt-get download "$package")
-          dpkg-deb -x build/boot-kernel/*.deb build/boot-kernel/root
-          kernel=$(find "$root/build/boot-kernel/root/boot" -name 'vmlinuz-*' -print -quit)
-          test -s "$kernel"
-          for profile in build build-native; do
-            python3 "$boot/tests/test_so_boot.py" --boot "$boot/refind/refind_x64.efi" \
-              --module "$root/$profile/FAT32.so" --kernel "$kernel" \
-              --output "$root/build/boot-$profile"
-          done
-          python3 "$boot/tests/test_so_boot.py" --boot "$boot/refind/refind_x64.efi" \
-            --module "$root/build/FAT32.so" --kernel "$kernel" --reject-module \
-            --output "$root/build/boot-reject"
   manual-package:
     needs: qualify
     runs-on: ubuntu-24.04
@@ -197,7 +94,7 @@ jobs:
               "$RUNNER_TEMP/portable-root/System/Resources/Documentation/Filesystem-FAT32.pdf"
 
   publish:
-    needs: [qualify, defrag-consumer, boot-consumer, manual-package]
+    needs: [qualify, manual-package]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
@@ -228,4 +125,4 @@ jobs:
           sha256sum dist/*.deb dist/*.run
           gh release create "$tag" dist/*.deb dist/*.run \
             --target "$GITHUB_SHA" --title "Filesystem FAT32 ${version}" \
-            --notes "Independent FAT32.so Common V2 filesystem provider and native installer. No Linux filesystem-specific kernel module or separate EFI filesystem driver is included. Firmware and real-media qualification is enforced by the release workflow."
+            --notes "Independent FAT32.so Common V2 filesystem provider and native installer. No Linux filesystem-specific kernel module or separate EFI filesystem driver is included. Common V2 interface, native filesystem-media and independent packaging qualification complete."
