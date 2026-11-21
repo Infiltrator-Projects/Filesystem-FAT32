@@ -12,7 +12,8 @@ int main(int argc,char **argv)
     if(argc!=2)return 2;
     void *library=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);
     if(!library){fprintf(stderr,"%s\n",dlerror());return 1;}
-    if(dlsym(library,"infiltrator_filesystem_api_v1") ||
+    if(dlsym(library,"infiltrator_filesystem_defrag_v1") ||
+       dlsym(library,"infiltrator_filesystem_api_v1") ||
        dlsym(library,"infiltrator_filesystem_module_v1"))
         return 3;
     void *symbol=dlsym(library,IFS_FS_COMMON_EXPORT_V2);
@@ -28,13 +29,16 @@ int main(int argc,char **argv)
          (IFS_FS_PROFILE_HOSTED | IFS_FS_PROFILE_FREESTANDING |
           IFS_FS_PROFILE_FIRMWARE)) return 14;
     if(api->group_mask!=(IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE)|
-                         IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME)) ||
+                         IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME)|
+                         IFS_FS_GROUP_BIT(IFS_FS_GROUP_DEFRAG)) ||
        (api->runtime_profiles & IFS_FS_PROFILE_KERNEL))
         return 6;
     const IfsFsCoreOpsV2 *core=
         (const IfsFsCoreOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_CORE);
     const IfsFsVolumeOpsV2 *volume_ops=
         (const IfsFsVolumeOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_VOLUME);
+    const IfsFsDefragOpsV2 *defrag_ops=
+        (const IfsFsDefragOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_DEFRAG);
     if(!core || !volume_ops || !core->probe || !core->mount || !core->unmount ||
        !core->stat || !core->directory_entry || !core->read || !core->write ||
        !core->create || !core->remove || !core->rename || !core->truncate ||
@@ -45,7 +49,9 @@ int main(int argc,char **argv)
         (IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT))
         return 8;
     if(volume_ops->header.capabilities & (IFS_FS_VOLUME_CHECK|IFS_FS_VOLUME_REPAIR) ||
-       ifs_fs_group_v2(api,IFS_FS_GROUP_DEFRAG))
+       !defrag_ops || defrag_ops->header.capabilities!=IFS_FS_DEFRAG_MAP ||
+       !defrag_ops->map || defrag_ops->plan || defrag_ops->execute ||
+       defrag_ops->verify || defrag_ops->recover || defrag_ops->release_plan)
         return 9;
     if(dlclose(library)!=0)return 10;
     puts("FAT32-STRICT-COMMON-V2-ABI-PASS");
