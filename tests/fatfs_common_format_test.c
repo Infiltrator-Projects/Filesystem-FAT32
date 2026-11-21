@@ -92,7 +92,11 @@ int main(int argc,char **argv)
     io.flush=flush;
     io.allocate=allocate_at;
     io.release=release_at;
-    uint32_t variant=0;
+    uint32_t variant=UINT32_MAX;
+    IfsFsHostRuntimeV2 invalid_host=io;
+    invalid_host.abi_version=1u;
+    if(fs->probe(&invalid_host,&variant)!=IFS_FS_INVALID || variant!=0u)
+        return fail("Common V2 probe retained a stale variant for invalid host");
     IfsFsHostRuntimeV2 failed_host=io;
     failed_host.read_at=fail_read;
     IfsFsVolumeInfoV2 failed_info={.structure_bytes=sizeof(failed_info)};
