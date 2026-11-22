@@ -33,6 +33,18 @@ def inspect(module):
     for symbol in EXPORTS:
         if symbol not in exports:
             raise RuntimeError("Missing ABI export: " + symbol)
+    # Inspect the dynamic symbol table, not the full ELF symbol table:
+    # the only public filesystem ABI entry must be Common V2.
+    dynamic = subprocess.check_output(
+        ["readelf", "--dyn-syms", "-W", str(module)], text=True)
+    public = []
+    for line in dynamic.splitlines():
+        fields = line.split()
+        if (len(fields) >= 8 and fields[0].endswith(":") and
+                fields[6] != "UND" and fields[4] in ("GLOBAL", "WEAK")):
+            public.append(fields[7])
+    if sorted(public) != sorted(EXPORTS):
+        raise RuntimeError("Non-V2 or unexpected public ABI exports: " + repr(public))
     meta = subprocess.check_output(["readelf", "-p", ".ifsmeta", str(module)], text=True)
     for api in (3, 4):
         if f"IFS-MODULE:fat{WIDTH}:{api}" in meta:
@@ -67,6 +79,7 @@ def compile_module(module, flags, training=False):
         args += ["-nostdlib"]
     args += ["-shared", "-Wl,-Bsymbolic", "-Wl,-z,defs", "-Wl,-z,noexecstack", "-Wl,-z,relro",
              "-Wl,-z,now", "-o", module, *SOURCES]
+    args += ["-Wl,--version-script=" + str(ROOT / "standalone/v2-only.map")]
     run(args)
     if not training:
         inspect(module)
