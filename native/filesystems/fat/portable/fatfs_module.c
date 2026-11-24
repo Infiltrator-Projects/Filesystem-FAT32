@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Adapter for source-owned ChaN FatFs R0.16 patch2. One active image per
- * standalone module: caller must ensure exclusive media ownership and never
- * concurrently invoke this ABI. A .so is not a Linux VFS mount or EFI driver.
+ * standalone module: caller must ensure exclusive media ownership. Common V2
+ * rejects overlapping operations with BUSY. A .so is not a Linux VFS mount or EFI driver.
  * V4 separately exposes explicitly requested partition formatting.
  */
 #include "fatfs_module.h"
@@ -11,6 +11,23 @@
 #include "infiltratr/filesystem_module_v2.h"
 extern DWORD ifs_fatfs_native_next_cluster(FIL *file, DWORD cluster);
 #include <string.h>
+#include <stdatomic.h>
+
+/* The native engine has one active image and shared scratch/IO state.
+ * Enforce exclusion inside the V2 provider, not merely in its callers.
+ * A reentrant host callback must receive BUSY rather than deadlocking
+ * or replacing the device while a transfer is in progress. */
+static atomic_flag v2_operation_gate=ATOMIC_FLAG_INIT;
+static int v2_enter_operation(void)
+{
+    return !atomic_flag_test_and_set_explicit(&v2_operation_gate,memory_order_acquire);
+}
+static int v2_leave_operation(int rc)
+{
+    atomic_flag_clear_explicit(&v2_operation_gate,memory_order_release);
+    return rc;
+}
+
 #include <string.h>
 
 #if defined(IFS_FATFS_ONLY) && IFS_FATFS_ONLY == 12
@@ -482,6 +499,14 @@ static int common_probe(const IfsFsHostRuntimeV2 *host,
     *detected_variant = 32u;
     return IFS_FS_OK;
 }
+static int guarded_common_probe(const IfsFsHostRuntimeV2 *host,
+                        uint32_t *detected_variant)
+{
+    if (detected_variant) *detected_variant=0u;
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_probe(host,detected_variant));
+}
+
 /* Preserve Common V2 host read errors across FatFs's negative-result
  * boundary. Metadata I/O failure is not an absent directory entry. */
 static int common_read_failure=IFS_FS_OK;
@@ -540,6 +565,13 @@ static int common_format(const IfsFsHostRuntimeV2 *host, uint32_t variant,
     return format_volume(&io, 0u) == 0 ?
            IFS_FS_OK : IFS_FS_IO_ERROR;
 }
+static int guarded_common_format(const IfsFsHostRuntimeV2 *host, uint32_t variant,
+                         const char *volume_label, uint32_t flags)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_format(host,variant,volume_label,flags));
+}
+
 /* A Common session uses the one FatFs engine directly.
  * Its media context is exclusive; refuse concurrent mounts rather than
  * risk redirecting callers between partitions. Host I/O is copied. */
@@ -659,6 +691,14 @@ static int common_mount(const IfsFsHostRuntimeV2 *host, void **context,
     *context=(void *)common_session.active_handle;
     return IFS_FS_OK;
 }
+static int guarded_common_mount(const IfsFsHostRuntimeV2 *host, void **context,
+                        IfsFsVolumeInfoV2 *info)
+{
+    if (context) *context=NULL;
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_mount(host,context,info));
+}
+
 static int common_unmount(void *context)
 {
     if (!common_session_valid(context)) return IFS_FS_INVALID;
@@ -668,6 +708,12 @@ static int common_unmount(void *context)
     common_session.active_handle=0u;
     return IFS_FS_OK;
 }
+static int guarded_common_unmount(void *context)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_unmount(context));
+}
+
 static int common_entry(IfsFsEntryV2 *out, const IfsFatfsEntry *file_info,
                         int root)
 {
@@ -701,6 +747,12 @@ static int common_stat(void *context, const char *path, IfsFsEntryV2 *out)
             common_read_failure:IFS_FS_NOT_FOUND;
     return common_entry(out,&entry,0);
 }
+static int guarded_common_stat(void *context, const char *path, IfsFsEntryV2 *out)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_stat(context,path,out));
+}
+
 static int common_directory_entry(void *context, const char *path,
                                   uint32_t index, IfsFsEntryV2 *out)
 {
@@ -716,6 +768,13 @@ static int common_directory_entry(void *context, const char *path,
         common_read_failure:IFS_FS_IO_ERROR;
     return common_entry(out,&entry,0);
 }
+static int guarded_common_directory_entry(void *context, const char *path,
+                                  uint32_t index, IfsFsEntryV2 *out)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_directory_entry(context,path,index,out));
+}
+
 static int common_file_read(void *context, const char *path, uint64_t offset,
                             void *destination, uint32_t length)
 {
@@ -732,6 +791,13 @@ static int common_file_read(void *context, const char *path, uint64_t offset,
            IFS_FS_OK : (common_read_failure!=IFS_FS_OK ?
              common_read_failure:IFS_FS_IO_ERROR);
 }
+static int guarded_common_file_read(void *context, const char *path, uint64_t offset,
+                            void *destination, uint32_t length)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_file_read(context,path,offset,destination,length));
+}
+
 static int common_file_write(void *context, const char *path, uint64_t offset,
                              const void *source, uint32_t length)
 {
@@ -747,6 +813,13 @@ static int common_file_write(void *context, const char *path, uint64_t offset,
                                                       source,length)==0 ?
            IFS_FS_OK : IFS_FS_IO_ERROR;
 }
+static int guarded_common_file_write(void *context, const char *path, uint64_t offset,
+                             const void *source, uint32_t length)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_file_write(context,path,offset,source,length));
+}
+
 static int common_create(void *context, const char *path, uint32_t type)
 {
     char p[4096];
@@ -762,6 +835,12 @@ static int common_create(void *context, const char *path, uint32_t type)
        make_dir(p);
     return rc==0 ? IFS_FS_OK : IFS_FS_IO_ERROR;
 }
+static int guarded_common_create(void *context, const char *path, uint32_t type)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_create(context,path,type));
+}
+
 static int common_remove(void *context, const char *path)
 {
     char p[4096];
@@ -773,6 +852,12 @@ static int common_remove(void *context, const char *path)
     return remove_path(p)==0 ?
            IFS_FS_OK : IFS_FS_IO_ERROR;
 }
+static int guarded_common_remove(void *context, const char *path)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_remove(context,path));
+}
+
 static int common_rename(void *context, const char *old_path,
                          const char *new_path)
 {
@@ -786,6 +871,13 @@ static int common_rename(void *context, const char *old_path,
     return rename_path(old_p,new_p)==0 ?
            IFS_FS_OK : IFS_FS_IO_ERROR;
 }
+static int guarded_common_rename(void *context, const char *old_path,
+                         const char *new_path)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_rename(context,old_path,new_path));
+}
+
 static int common_truncate(void *context, const char *path, uint64_t length)
 {
     char p[4096];
@@ -797,6 +889,12 @@ static int common_truncate(void *context, const char *path, uint64_t length)
     return file_truncate(p,(uint32_t)length)==0 ?
            IFS_FS_OK : IFS_FS_IO_ERROR;
 }
+static int guarded_common_truncate(void *context, const char *path, uint64_t length)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_truncate(context,path,length));
+}
+
 
 
 
@@ -817,12 +915,24 @@ static int v2_query(void *mounted, IfsFsVolumeInfoV2 *info)
     info->free_bytes=free_bytes;
     return IFS_FS_OK;
 }
+static int guarded_v2_query(void *mounted, IfsFsVolumeInfoV2 *info)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(v2_query(mounted,info));
+}
+
 static int v2_sync(void *volume) {
     if (!common_session_valid(volume)) return IFS_FS_INVALID;
     if (!common_session.host.flush) return IFS_FS_OK;
     return common_session.host.flush(common_session.host.context) == 0 ?
            IFS_FS_OK : IFS_FS_IO_ERROR;
 }
+static int guarded_v2_sync(void *volume)
+{
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(v2_sync(volume));
+}
+
 static int v2_label(void *mounted, char *out, uint32_t capacity, uint32_t *bytes)
 {
     if (!common_session_valid(mounted) || !out || !capacity || !bytes)
@@ -840,16 +950,23 @@ static int v2_label(void *mounted, char *out, uint32_t capacity, uint32_t *bytes
     *bytes = (uint32_t)length;
     return IFS_FS_OK;
 }
+static int guarded_v2_label(void *mounted, char *out, uint32_t capacity, uint32_t *bytes)
+{
+    if (bytes) *bytes=0u;
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(v2_label(mounted,out,capacity,bytes));
+}
+
 __attribute__((used,section(".ifsmeta")))
 static const char common_v2_identity[]="IFS-MODULE:fat32:common2";
 static const IfsFsVolumeOpsV2 common_volume={
     .header={IFS_FS_GROUP_ABI_V2,sizeof(IfsFsVolumeOpsV2),
              IFS_FS_GROUP_VOLUME,0u,
              IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_LABEL_GET|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT},
-    .label=v2_label,
-    .query=v2_query,
-    .sync=v2_sync,
-    .format=common_format
+    .label=guarded_v2_label,
+    .query=guarded_v2_query,
+    .sync=guarded_v2_sync,
+    .format=guarded_common_format
 };
 /* V2 core and volume tables operate against the same native FatFs state. */
 static const IfsFsCoreOpsV2 common_core={
@@ -859,11 +976,11 @@ static const IfsFsCoreOpsV2 common_core={
              IFS_FS_CORE_LIST|IFS_FS_CORE_READ|IFS_FS_CORE_WRITE|
              IFS_FS_CORE_CREATE|IFS_FS_CORE_REMOVE|IFS_FS_CORE_RENAME|
              IFS_FS_CORE_TRUNCATE},
-    .probe=common_probe, .mount=common_mount, .unmount=common_unmount,
-    .stat=common_stat, .directory_entry=common_directory_entry,
-    .read=common_file_read, .write=common_file_write,
-    .create=common_create, .remove=common_remove,
-    .rename=common_rename, .truncate=common_truncate
+    .probe=guarded_common_probe, .mount=guarded_common_mount, .unmount=guarded_common_unmount,
+    .stat=guarded_common_stat, .directory_entry=guarded_common_directory_entry,
+    .read=guarded_common_file_read, .write=guarded_common_file_write,
+    .create=guarded_common_create, .remove=guarded_common_remove,
+    .rename=guarded_common_rename, .truncate=guarded_common_truncate
 };
 #if IFS_FATFS_ONLY == 16
 #define IFS_FAT_EOC_MIN 0xfff8u
@@ -996,10 +1113,19 @@ done:
     *written=count;
     return result;
 }
+static int guarded_common_v2_extent_map(void *context,const char *path,
+                                uint64_t first_extent,IfsFsExtentV2 *out,
+                                uint32_t capacity,uint32_t *written)
+{
+    if (written) *written=0u;
+    if (!v2_enter_operation()) return IFS_FS_BUSY;
+    return v2_leave_operation(common_v2_extent_map(context,path,first_extent,out,capacity,written));
+}
+
 static const IfsFsDefragOpsV2 common_defrag={
     .header={IFS_FS_GROUP_ABI_V2,sizeof(IfsFsDefragOpsV2),
              IFS_FS_GROUP_DEFRAG,0u,IFS_FS_DEFRAG_MAP},
-    .map=common_v2_extent_map
+    .map=guarded_common_v2_extent_map
 };
 
 static const IfsFsGroupHeaderV2 *common_query(
