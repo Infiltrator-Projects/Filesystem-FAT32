@@ -30,7 +30,8 @@ int main(int argc,char **argv)
           IFS_FS_PROFILE_FIRMWARE)) return 14;
     if(api->group_mask!=(IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE)|
                          IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME)|
-                         IFS_FS_GROUP_BIT(IFS_FS_GROUP_DEFRAG)) ||
+                         IFS_FS_GROUP_BIT(IFS_FS_GROUP_DEFRAG)|
+         IFS_FS_GROUP_BIT(IFS_FS_GROUP_ALLOCATION)) ||
        (api->runtime_profiles & IFS_FS_PROFILE_KERNEL))
         return 6;
     const IfsFsCoreOpsV2 *core=
@@ -39,6 +40,8 @@ int main(int argc,char **argv)
         (const IfsFsVolumeOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_VOLUME);
     const IfsFsDefragOpsV2 *defrag_ops=
         (const IfsFsDefragOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_DEFRAG);
+    const IfsFsAllocationOpsV2 *allocation=(const void*)ifs_fs_group_v2(api,IFS_FS_GROUP_ALLOCATION);
+    if(!allocation || allocation->header.capabilities!=IFS_FS_ALLOCATION_MAP || !allocation->map)return 6;
     if(!core || !volume_ops || !core->probe || !core->mount || !core->unmount ||
        !core->stat || !core->directory_entry || !core->read || !core->write ||
        !core->create || !core->remove || !core->rename || !core->truncate ||
