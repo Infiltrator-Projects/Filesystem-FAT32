@@ -1,10 +1,10 @@
 %PDF-1.4
-%ASCII-ONLY-PDF
+%‚„œ”
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
 endobj
 2 0 obj
-<< /Type /Pages /Kids [6 0 R 8 0 R 10 0 R 12 0 R 14 0 R 16 0 R 18 0 R 20 0 R 22 0 R 24 0 R 26 0 R 28 0 R 30 0 R] /Count 13 >>
+<< /Type /Pages /Kids [6 0 R 8 0 R 10 0 R 12 0 R 14 0 R 16 0 R 18 0 R 20 0 R 22 0 R 24 0 R 26 0 R 28 0 R 30 0 R 32 0 R 34 0 R] /Count 15 >>
 endobj
 3 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
@@ -380,42 +380,126 @@ BT /F1 10 Tf 0.09 0.16 0.24 rg 1 0 0 1 55 360.5 Tm (8. When resizing, recalculat
 BT /F1 10 Tf 0.09 0.16 0.24 rg 1 0 0 1 55 344 Tm (together; a mere change to the total-sector field is insufficient.) Tj ET
 endstream
 endobj
+32 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 33 0 R >>
+endobj
+33 0 obj
+<< /Length 2965 >>
+stream
+0.05 0.13 0.22 rg 0 749 595 93 re f
+0.04 0.54 0.60 rg 50 747 115 4 re f
+0.78 0.82 0.86 RG 0.6 w 50 50 m 545 50 l S
+BT /F2 9 Tf 0.62 0.86 0.90 rg 1 0 0 1 50 801 Tm (INFILTRATOR / IMPLEMENTATION REFERENCE) Tj ET
+BT /F2 19 Tf 1 1 1 rg 1 0 0 1 50 771 Tm (FAT32 / Common V2 provider) Tj ET
+BT /F1 8 Tf 0.34 0.40 0.44 rg 1 0 0 1 50 34 Tm (Implementation appendix / source revision be79bcb6ef48) Tj ET
+BT /F1 8 Tf 0.34 0.40 0.44 rg 1 0 0 1 505 34 Tm (PAGE 14) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 710 Tm (1. PURPOSE AND FORMAT SCOPE) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 686 Tm (Microsoft FAT32, with a chain-based root directory and 28 significant) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 671 Tm (allocation-link bits. This repository owns the format-specific) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 656 Tm (implementation of FAT32.so for InfiltratorOS.) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 626 Tm (2. ON-DISK ARCHITECTURE AND INVARIANTS) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 602 Tm (Validate BPB geometry, root cluster, FAT boundaries and active/mirrored) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 587 Tm (FAT policy. Classify FAT32 from the actual cluster population. Preserve) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 572 Tm (the upper reserved nibble when changing FAT entries; treat FSInfo) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 557 Tm (free-count and next-free values as advisory. Ordinary directory file) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 542 Tm (length is 32-bit. Directory rename must preserve ancestry and avoid) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 527 Tm (cycles.) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 497 Tm (3. COMMON V2 IMPLEMENTATION AND CAPABILITIES) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 473 Tm (Common V2 provides probe, mount, file/directory operations, sync and) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 458 Tm (format through the FAT32-selected engine. The hosted FatFs engine supports) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 443 Tm (one mounted volume per loaded image. Native namespace and capacity errors) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 428 Tm (are preserved. BOOT consumes the read-only profile; the dedicated) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 413 Tm (relocation and recovery interface remains separately qualified. The) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 398 Tm (canonical entry point is infiltrator_filesystem_api_v2. Consumers must) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 383 Tm (negotiate the actual profile and operation masks and use bounded,) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 368 Tm (partition-relative host I/O. A source-level callback does not by itself) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 353 Tm (establish that every format variant or host profile is qualified.) Tj ET
+endstream
+endobj
+34 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 35 0 R >>
+endobj
+35 0 obj
+<< /Length 3905 >>
+stream
+0.05 0.13 0.22 rg 0 749 595 93 re f
+0.04 0.54 0.60 rg 50 747 115 4 re f
+0.78 0.82 0.86 RG 0.6 w 50 50 m 545 50 l S
+BT /F2 9 Tf 0.62 0.86 0.90 rg 1 0 0 1 50 801 Tm (INFILTRATOR / IMPLEMENTATION REFERENCE) Tj ET
+BT /F2 19 Tf 1 1 1 rg 1 0 0 1 50 771 Tm (FAT32 / Common V2 provider) Tj ET
+BT /F1 8 Tf 0.34 0.40 0.44 rg 1 0 0 1 50 34 Tm (Implementation appendix / source revision be79bcb6ef48) Tj ET
+BT /F1 8 Tf 0.34 0.40 0.44 rg 1 0 0 1 505 34 Tm (PAGE 15) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 710 Tm (4. INTEGRITY, MUTATION, ALLOCATION AND RECOVERY) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 686 Tm (A backup boot sector or mirrored FAT is not a journal. Preserve all) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 671 Tm (allocation references during relocation and verify payload and target) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 656 Tm (identity before recovery. The legacy validation record includes OVMF) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 641 Tm (handoff and dedicated Defragmenter recovery tests; physical-media crash) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 626 Tm (safety and generic kernel-side SO mounting remain separate. For) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 611 Tm (destructive operations, require the applicable exclusive writable host,) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 596 Tm (durability contract and format-specific validation. Never silently) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 581 Tm (substitute a kernel or FUSE driver or treat a rejected or unavailable) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 566 Tm (operation as success. Preserve original disk-format semantics; relocation) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 551 Tm (and recovery are separate from ordinary file I/O.) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 521 Tm (5. BUILD, INSTALLATION AND RELEASE) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 497 Tm (The target installation is /System/Filesystems/FAT32.so and) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 482 Tm (/System/Resources/Documentation/Filesystem-FAT32.pdf. The project release) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 467 Tm (policy is a portable amd64 DEB and a CPU-native source-first RUN, with) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 452 Tm (GitHub's automatic source archive; do not treat this policy statement as) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 437 Tm (verification of the current installer payload. The release workflow is the) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 422 Tm (authoritative executable build and package specification. Historical) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 407 Tm (adapters and test artifacts are not additional production filesystem) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 392 Tm (authorities.) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 362 Tm (6. QUALIFICATION AND LIMITATIONS) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 338 Tm (Recorded qualification workflow) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 323 Tm (\(https://github.com/Infiltrator-Projects/Filesystem-FAT32/actions/runs/455) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 308 Tm (19961986\) | Current workflows) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 293 Tm (\(https://github.com/Infiltrator-Projects/Filesystem-FAT32/actions?query=br) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 278 Tm (anch%3Amain\). A successful workflow establishes the tested scope only, not) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 263 Tm (complete original-format parity, physical-media crash safety, or) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 248 Tm (production BOOT/kernel integration. Use disposable images for destructive) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 233 Tm (qualification.) Tj ET
+endstream
+endobj
 xref
-0 32
+0 36
 0000000000 65535 f 
-0000000025 00000 n 
-0000000074 00000 n 
-0000000215 00000 n 
-0000000285 00000 n 
-0000000360 00000 n 
-0000000428 00000 n 
-0000000574 00000 n 
-0000003558 00000 n 
-0000003704 00000 n 
-0000005868 00000 n 
-0000006016 00000 n 
-0000008033 00000 n 
-0000008181 00000 n 
-0000010143 00000 n 
-0000010291 00000 n 
-0000012205 00000 n 
-0000012353 00000 n 
-0000014262 00000 n 
-0000014410 00000 n 
-0000016117 00000 n 
-0000016265 00000 n 
-0000018326 00000 n 
-0000018474 00000 n 
-0000020364 00000 n 
-0000020512 00000 n 
-0000022293 00000 n 
-0000022441 00000 n 
-0000024403 00000 n 
-0000024551 00000 n 
-0000027298 00000 n 
-0000027446 00000 n 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000219 00000 n 
+0000000289 00000 n 
+0000000364 00000 n 
+0000000432 00000 n 
+0000000578 00000 n 
+0000003562 00000 n 
+0000003708 00000 n 
+0000005872 00000 n 
+0000006020 00000 n 
+0000008037 00000 n 
+0000008185 00000 n 
+0000010147 00000 n 
+0000010295 00000 n 
+0000012209 00000 n 
+0000012357 00000 n 
+0000014266 00000 n 
+0000014414 00000 n 
+0000016121 00000 n 
+0000016269 00000 n 
+0000018330 00000 n 
+0000018478 00000 n 
+0000020368 00000 n 
+0000020516 00000 n 
+0000022297 00000 n 
+0000022445 00000 n 
+0000024407 00000 n 
+0000024555 00000 n 
+0000027302 00000 n 
+0000027450 00000 n 
+0000030271 00000 n 
+0000030419 00000 n 
+0000033436 00000 n 
+0000033584 00000 n 
 trailer
-<< /Size 32 /Root 1 0 R >>
+<< /Size 36 /Root 1 0 R >>
 startxref
-30267
+37541
 %%EOF
