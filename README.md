@@ -1,44 +1,37 @@
 # Filesystem-FAT32
 
-Independent FAT32 filesystem engine for InfiltratorOS. Builds `FAT32.so` directly from source, with a portable DEB and a checksum-verified source-embedded native `.run` installer.
+## 1. Purpose and format scope
 
-The original FAT32 reader has authentic FAT32 BPB, root-cluster, fragmented-read and width checks. The integrated portable ChaN FatFs implementation adds V3 file/directory operations and V4 volume formatting, attributes, timestamps and free-space reporting. Directory renames use the source-owned FAT32 ancestry guard; broader independent ancestry and malformed-directory qualification remains open. All writing requires exclusive media ownership and host-supplied read/write/flush callbacks.
+Microsoft FAT32, with a chain-based root directory and 28 significant allocation-link bits. This repository owns the format-specific implementation of `FAT32.so` for InfiltratorOS.
 
-```sh
-make check
-make release
-```
+## 2. On-disk architecture and invariants
 
-Aggressive builds use `-O3 -march=native -mtune=native -flto=auto` and real two-pass GCC PGO trained on disposable regular-file images; release CI must confirm ABI exports, native build records and module SHA-256.
+Validate BPB geometry, root cluster, FAT boundaries and active/mirrored FAT policy. Classify FAT32 from the actual cluster population. Preserve the upper reserved nibble when changing FAT entries; treat FSInfo free-count and next-free values as advisory. Ordinary directory file length is 32-bit. Directory rename must preserve ancestry and avoid cycles.
 
-**Filesystem integration scope:** One authoritative `FAT32.so` supplies Common V2 read, write and format operations and the dedicated Defragmenter relocation and recovery interface. The unchanged Boot ELF/UEFI adapter loads the same module and hands off a real Linux kernel/initramfs in OVMF. Defragmenter exercises that very SO through its production host, including Growth Defrag, interrupted recovery, wrong-target rejection and independently checked FAT images. Native portable and source-compiled PGO packages are separately qualified.
+## 3. Common V2 implementation and capabilities
 
-The independent `FAT32.efi` and `fat32-linux-6.12.107.ko` are also VM-tested and published as transitional compatibility drivers; the KO is pinned to that kernel ABI. The final generic kernel-side SO bridge, original firmware/physical media and power-loss durability remain separate integration gates.
+Common V2 provides probe, mount, file/directory operations, sync and format through the FAT32-selected engine. The hosted FatFs engine supports one mounted volume per loaded image. Native namespace and capacity errors are preserved. BOOT consumes the read-only profile; the dedicated relocation and recovery interface remains separately qualified. The canonical entry point is `infiltrator_filesystem_api_v2`. Consumers must negotiate the actual profile and operation masks and use bounded, partition-relative host I/O. A source-level callback does not by itself establish that every format variant or host profile is qualified.
 
-Sources originated in [Filesystems](https://github.com/Infiltrator-Projects/Filesystems) and the existing FAT12/FAT16 independent module work. See [provenance](MIGRATION-PROVENANCE.md) and [validation](docs/VALIDATION.md).
+## 4. Integrity, mutation, allocation and recovery
 
-## Preserved Linux and EFI source (0.1.1)
+A backup boot sector or mirrored FAT is not a journal. Preserve all allocation references during relocation and verify payload and target identity before recovery. The legacy validation record includes OVMF handoff and dedicated Defragmenter recovery tests; physical-media crash safety and generic kernel-side SO mounting remain separate. For destructive operations, require the applicable exclusive writable host, durability contract and format-specific validation. Never silently substitute a kernel or FUSE driver or treat a rejected or unavailable operation as success. Preserve original disk-format semantics; relocation and recovery are separate from ordinary file I/O.
 
-The complete original Linux FAT/VFAT source under `native/filesystems/fat/linux/` and TianoCore EDK2 EFI FAT source under `native/filesystems/fat/efi/` have been imported as **real, editable source files**, not references. All 50 imported blobs were checked byte-for-byte against the pinned Filesystems source revision. Independent FAT32-specific transitional KO and EFI binaries are VM-qualified for their pinned environments, but the portable DEB installs `FAT32.so` and its PDF manual; the native RUN may also build a kernel module when explicitly using a prepared kernel build.
+## 5. Build, installation and release
 
-The source archive and native RUN contain these sources so future FAT32-specific `.ko` and `.efi` work can proceed without returning to a scattered implementation. The corresponding kernel and firmware release artifacts have their own qualification workflows; they are not substitutes for the eventual generic kernel SO loader.
+The target installation is `/System/Filesystems/FAT32.so` and `/System/Resources/Documentation/Filesystem-FAT32.pdf`. The project release policy is a portable amd64 DEB and a CPU-native source-first RUN, with GitHub's automatic source archive; do not treat this policy statement as verification of the current installer payload. The release workflow is the authoritative executable build and package specification. Historical adapters and test artifacts are not additional production filesystem authorities.
 
-## Installer files
+## 6. Qualification and limitations
 
-The published portable Debian package installs two regular files:
+[Recorded qualification workflow](https://github.com/Infiltrator-Projects/Filesystem-FAT32/actions/runs/45519961986) · [Current workflows](https://github.com/Infiltrator-Projects/Filesystem-FAT32/actions?query=branch%3Amain). A successful workflow establishes the tested scope only, not complete original-format parity, physical-media crash safety, or production BOOT/kernel integration. Use disposable images for destructive qualification.
 
-- `/System/Filesystems/FAT32.so`
-- `/System/Resources/Documentation/Filesystem-FAT32.pdf`
+## 7. Technical references and provenance
 
-The manual native RUN builds these two files and can optionally include `/System/Kernel/Filesystems/fat32.ko` when run outside `--system-package-mode` against prepared kernel headers. It uses the running kernel headers by default; use `--kernel-build DIRECTORY` for another prepared kernel build with `Module.symvers`. The optional module is stored for manual use.
+- [Provider implementation](native/filesystems/fat/module/fat32_module.c)
+- [Native design or source provenance](docs/VALIDATION.md)
+- [Migration and source history](MIGRATION-PROVENANCE.md)
+- [Original-format reference source](docs/FAT32.pages) and [PDF](docs/FAT32.pdf)
+- [Project philosophy](docs/PHILOSOPHY.md)
+- [Common ABI](https://github.com/Infiltrator-Projects/Libraries)
+- [One-module architecture](docs/ONE_MODULE_END_STATE.md)
 
-InfiltratorOS calls `--system-package-mode` and decides which outputs need updating. Its worker builds a missing or older SO, repairs the PDF independently, and stores the matching released kernel module when available. Use `--build-only --output DIRECTORY` to build a Debian package.
-
-## Common V2 filesystem ABI
-
-`FAT32.so` exposes `infiltrator_filesystem_api_v2` for applications and BOOT.
-It delegates probe, mount, file and directory operations, sync and format to
-the FAT32 engine. BOOT supplies a bounded read-only host. Only one volume can
-be mounted in this FatFs engine at once. Writes and formatting require
-exclusive media ownership. The dedicated Defragmenter relocation and
-recovery interface remains in service pending equivalent Common V2 operations.
+The original-format reference and historical migration notes describe different evidence from the current production provider. When descriptions disagree, the current exported descriptor, implementation, executable tests and exact-revision release evidence take precedence.
