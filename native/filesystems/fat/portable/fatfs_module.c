@@ -1054,16 +1054,194 @@ static int v2_set_label(void *mounted,const char *label)
     return v2_leave_operation(IFS_FS_IO_ERROR);
 }
 
+/* Native FAT32 allocation integrity. The mounted FatFs engine is the
+ * authoritative geometry and FAT-chain reader. Claim every reachable
+ * allocation exactly once, including the root and subdirectory chains,
+ * then scan the entire FAT for allocated but unreachable clusters.
+ * Scratch ownership is supplied by Common V2; no persistent writes,
+ * kernel filesystem operations or external checkers are involved. */
+typedef struct {
+    FIL table;
+    uint8_t *owned;
+    uint32_t *queue;
+    uint32_t queued;
+    uint64_t errors;
+} FatCheckV2;
+
+static int check_cancelled(void)
+{
+    const IfsFsHostRuntimeV2 *h=&common_session.host;
+    return h->cancelled && h->cancelled(h->context);
+}
+static uint32_t check_le16(const uint8_t *p)
+{ return (uint32_t)p[0] | ((uint32_t)p[1]<<8); }
+static uint32_t check_le32(const uint8_t *p)
+{ return check_le16(p) | (check_le16(p+2)<<16); }
+
+static int check_chain(FatCheckV2 *c,uint32_t first,uint64_t wanted,int directory)
+{
+    if(!directory && !first && !wanted)return IFS_FS_OK;
+    if(!directory && !wanted){++c->errors;return IFS_FS_CORRUPT;}
+    uint32_t cluster=first;
+    for(uint32_t n=0u;n<volume.n_fatent-2u;++n) {
+        if(check_cancelled())return IFS_FS_BUSY;
+        if(cluster<2u || cluster>=volume.n_fatent ||
+           (c->owned[cluster/8u] & (uint8_t)(1u<<(cluster%8u))) ||
+           (!directory && n>=wanted)) {
+            ++c->errors;return IFS_FS_CORRUPT;
+        }
+        c->owned[cluster/8u]|=(uint8_t)(1u<<(cluster%8u));
+        DWORD next=ifs_fatfs_native_next_cluster(&c->table,cluster);
+        if(next==UINT32_MAX)return IFS_FS_IO_ERROR;
+        if(next>=0x0ffffff8u && next<=0x0fffffffu) {
+            if(!directory && (uint64_t)n+1u!=wanted){
+                ++c->errors;return IFS_FS_CORRUPT;
+            }
+            return IFS_FS_OK;
+        }
+        if(next<2u || next>=volume.n_fatent || next>=0x0ffffff0u) {
+            ++c->errors;return IFS_FS_CORRUPT;
+        }
+        cluster=next;
+    }
+    ++c->errors;return IFS_FS_CORRUPT;
+}
+
+static int check_record(FatCheckV2 *c,const uint8_t *e,uint64_t unit)
+{
+    if(e[0]==0xe5u || e[11]==0x0fu || (e[11]&0x08u))return IFS_FS_OK;
+    const int directory=(e[11]&0x10u)!=0u;
+    if(directory && e[0]=='.' && (e[1]==' ' || e[1]=='.'))return IFS_FS_OK;
+    const uint32_t first=(check_le16(e+20)<<16)|check_le16(e+26);
+    const uint32_t size=check_le32(e+28);
+    if(directory) {
+        if(size || first<2u || first>=volume.n_fatent ||
+           c->queued>=volume.n_fatent-2u) {
+            ++c->errors;return IFS_FS_OK;
+        }
+        c->queue[c->queued++]=first;
+        return IFS_FS_OK;
+    }
+    int rc=check_chain(c,first,(size+unit-1u)/unit,0);
+    return rc==IFS_FS_CORRUPT?IFS_FS_OK:rc;
+}
+
+static int check_directory(FatCheckV2 *c,uint32_t first,uint64_t unit)
+{
+    int rc=check_chain(c,first,0u,1);
+    if(rc!=IFS_FS_OK)return rc==IFS_FS_CORRUPT?IFS_FS_OK:rc;
+    uint8_t sector[4096];
+    uint32_t cluster=first;
+    for(uint32_t step=0u;step<volume.n_fatent-2u;++step) {
+        if(check_cancelled())return IFS_FS_BUSY;
+        const uint64_t base=(uint64_t)volume.database+
+                            (uint64_t)(cluster-2u)*volume.csize;
+        for(uint32_t n=0u;n<volume.csize;++n) {
+            if(disk_read(0,sector,(LBA_t)(base+n),1u)!=RES_OK)
+                return IFS_FS_IO_ERROR;
+            for(uint32_t at=0u;at<device.sector_bytes;at+=32u) {
+                if(!sector[at])return IFS_FS_OK;
+                rc=check_record(c,sector+at,unit);
+                if(rc!=IFS_FS_OK)return rc;
+            }
+        }
+        DWORD next=ifs_fatfs_native_next_cluster(&c->table,cluster);
+        if(next==UINT32_MAX)return IFS_FS_IO_ERROR;
+        if(next>=0x0ffffff8u && next<=0x0fffffffu)return IFS_FS_OK;
+        if(next<2u || next>=volume.n_fatent || next>=0x0ffffff0u)
+            return IFS_FS_CORRUPT;
+        cluster=next;
+    }
+    return IFS_FS_CORRUPT;
+}
+
+/* FAT32 mirrors may have distinct high reserved nibbles. Compare only
+ * the 28-bit entries in the actual allocation domain, not FAT padding.
+ * Non-mirrored FATs explicitly designate one active copy; do not report
+ * stale inactive copies as corruption. This engine only supports copy 0
+ * as its active table, so refuse other active-copy layouts. */
+static int check_mirrors(FatCheckV2 *c)
+{
+    uint8_t a[4096],b[4096];
+    if(disk_read(0,a,volume.volbase,1u)!=RES_OK)return IFS_FS_IO_ERROR;
+    const uint32_t flags=check_le16(a+40);
+    if(flags&0x80u)return (flags&0x0fu)?IFS_FS_UNSUPPORTED:IFS_FS_OK;
+    const uint32_t per=device.sector_bytes/4u;
+    const uint64_t sectors=((uint64_t)volume.n_fatent+per-1u)/per;
+    if(!per || sectors>volume.fsize)return IFS_FS_CORRUPT;
+    for(uint32_t copy=1u;copy<volume.n_fats;++copy) {
+        for(uint64_t n=0u;n<sectors;++n) {
+            if(check_cancelled())return IFS_FS_BUSY;
+            if(disk_read(0,a,(LBA_t)((uint64_t)volume.fatbase+n),1u)!=RES_OK ||
+               disk_read(0,b,(LBA_t)((uint64_t)volume.fatbase+
+                          (uint64_t)copy*volume.fsize+n),1u)!=RES_OK)
+                return IFS_FS_IO_ERROR;
+            for(uint32_t i=0u;i<per && n*per+i<volume.n_fatent;++i)
+                if((check_le32(a+i*4u)&0x0fffffffu)!=
+                   (check_le32(b+i*4u)&0x0fffffffu))++c->errors;
+        }
+    }
+    return IFS_FS_OK;
+}
+
+static int common_v2_check(void *context,uint32_t flags,uint64_t *errors)
+{
+    if(!errors)return IFS_FS_INVALID;
+    *errors=0u;
+    if(!common_session_valid(context) || flags)return IFS_FS_INVALID;
+    if(volume.n_fatent<3u || !volume.csize || !volume.n_fats ||
+       volume.wflag)return IFS_FS_CORRUPT;
+    const IfsFsHostRuntimeV2 *h=&common_session.host;
+    const uint64_t unit=(uint64_t)volume.csize*device.sector_bytes;
+    const uint64_t queue_bytes=(uint64_t)volume.n_fatent*sizeof(uint32_t);
+    if(queue_bytes>SIZE_MAX)return IFS_FS_NO_MEMORY;
+    const size_t bitmap=(size_t)(((uint64_t)volume.n_fatent+7u)/8u);
+    FatCheckV2 c={0};
+    c.table.obj.fs=&volume;
+    c.owned=h->allocate(h->context,bitmap);
+    c.queue=h->allocate(h->context,(size_t)queue_bytes);
+    int rc=IFS_FS_NO_MEMORY;
+    if(!c.owned || !c.queue)goto done;
+    memset(c.owned,0,bitmap);
+    rc=check_mirrors(&c);
+    if(rc!=IFS_FS_OK)goto done;
+    c.queue[c.queued++]=(uint32_t)volume.dirbase;
+    for(uint32_t head=0u;head<c.queued;++head) {
+        rc=check_directory(&c,c.queue[head],unit);
+        if(rc!=IFS_FS_OK)goto done;
+    }
+    for(uint32_t cluster=2u;cluster<volume.n_fatent;++cluster) {
+        if(check_cancelled()){rc=IFS_FS_BUSY;goto done;}
+        const DWORD next=ifs_fatfs_native_next_cluster(&c.table,cluster);
+        if(next==UINT32_MAX){rc=IFS_FS_IO_ERROR;goto done;}
+        /* Bad clusters and reserved markers are not orphan file data. */
+        if(next && !(next>=0x0ffffff0u && next<=0x0ffffff7u) &&
+           !(c.owned[cluster/8u]&(uint8_t)(1u<<(cluster%8u))))++c.errors;
+    }
+    rc=IFS_FS_OK;
+done:
+    if(c.owned)h->release(h->context,c.owned);
+    if(c.queue)h->release(h->context,c.queue);
+    if(rc==IFS_FS_OK)*errors=c.errors;
+    return rc;
+}
+static int guarded_common_v2_check(void *context,uint32_t flags,uint64_t *errors)
+{
+    if(errors)*errors=0u;
+    if(!v2_enter_operation())return IFS_FS_BUSY;
+    return v2_leave_operation(common_v2_check(context,flags,errors));
+}
+
 __attribute__((used,section(".ifsmeta")))
 static const char common_v2_identity[]="IFS-MODULE:fat32:common2";
 static const IfsFsVolumeOpsV2 common_volume={
     .header={IFS_FS_GROUP_ABI_V2,sizeof(IfsFsVolumeOpsV2),
              IFS_FS_GROUP_VOLUME,0u,
-             IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_LABEL_GET|IFS_FS_VOLUME_LABEL_SET|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT},
+             IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_LABEL_GET|IFS_FS_VOLUME_LABEL_SET|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT|IFS_FS_VOLUME_CHECK},
     .label=guarded_v2_label,.set_label=v2_set_label,
     .query=guarded_v2_query,
     .sync=guarded_v2_sync,
-    .format=guarded_common_format
+    .format=guarded_common_format,.check=guarded_common_v2_check
 };
 /* V2 core and volume tables operate against the same native FatFs state. */
 static const IfsFsCoreOpsV2 common_core={

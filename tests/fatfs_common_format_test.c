@@ -118,7 +118,8 @@ int main(int argc,char **argv)
     if(!fs || !vol || !fs->probe || !fs->mount || !fs->unmount ||
        !fs->read || !fs->write || !fs->create || !fs->remove ||
        !fs->rename || !fs->truncate || !fs->directory_entry ||
-       !fs->stat || !vol->format || !vol->sync || !vol->query)
+       !fs->stat || !vol->format || !vol->sync || !vol->query || !vol->check ||
+       !(vol->header.capabilities&IFS_FS_VOLUME_CHECK))
         return fail("canonical V2 operations missing");
 
     IfsFsHostRuntimeV2 io={0};
@@ -303,9 +304,46 @@ int main(int argc,char **argv)
             return fail("V2 FAT map accepted unsafe filesystem path");
     }
 
-    if(vol->sync(session)!=IFS_FS_OK ||
-       fs->unmount(session)!=IFS_FS_OK)
+    /* Independent raw corruption fixture: allocate an otherwise free FAT
+     * entry in every mirror, without giving it a directory owner. CHECK
+     * must reject the orphan even though the file corpus remains readable. */
+    uint64_t errors=UINT64_MAX;
+    unsigned before_check=disk.writes;
+    if(vol->check(session,0u,&errors)!=IFS_FS_OK || errors ||
+       disk.writes!=before_check)
+        return fail("native FAT32 integrity check changed or rejected clean media");
+    if(vol->sync(session)!=IFS_FS_OK || fs->unmount(session)!=IFS_FS_OK)
         return fail("new-media FAT integrity or unmount");
+    {
+        uint8_t boot[512],entry_bytes[4],mark[4]={0xffu,0xffu,0xffu,0x0fu};
+        if(pread(disk.fd,boot,sizeof boot,0)!=(ssize_t)sizeof boot)
+            return fail("read orphan fixture boot sector");
+        const uint32_t reserved=read16(boot+14),fats=boot[16],fat_sectors=read32(boot+36);
+        const uint32_t total=read32(boot+32);
+        const uint32_t clusters=(total-reserved-fats*fat_sectors)/boot[13];
+        uint32_t orphan=0u;
+        for(uint32_t n=2u;n<clusters+2u;++n) {
+            if(pread(disk.fd,entry_bytes,4u,(off_t)((uint64_t)reserved*512u+n*4u))!=4)
+                return fail("read orphan fixture FAT");
+            if(!read32(entry_bytes)){orphan=n;break;}
+        }
+        if(!orphan)return fail("no free allocation for orphan fixture");
+        for(uint32_t copy=0u;copy<fats;++copy)
+            if(pwrite(disk.fd,mark,4u,(off_t)(((uint64_t)reserved+
+                (uint64_t)copy*fat_sectors)*512u+orphan*4u))!=4)
+                return fail("inject orphan into FAT mirror");
+        if(fsync(disk.fd)!=0)return fail("flush orphan fixture");
+        info.structure_bytes=sizeof info;
+        if(fs->mount(&io,&session,&info)!=IFS_FS_OK ||
+           vol->check(session,0u,&errors)!=IFS_FS_OK || !errors ||
+           fs->unmount(session)!=IFS_FS_OK)
+            return fail("native integrity check missed orphan");
+        for(uint32_t copy=0u;copy<fats;++copy)
+            if(pwrite(disk.fd,entry_bytes,4u,(off_t)(((uint64_t)reserved+
+                (uint64_t)copy*fat_sectors)*512u+orphan*4u))!=4)
+                return fail("restore orphan fixture");
+        if(fsync(disk.fd)!=0)return fail("flush restored fixture");
+    }
 
     info.structure_bytes=sizeof info;
     if(fs->mount(&io,&session,&info)!=IFS_FS_OK ||
