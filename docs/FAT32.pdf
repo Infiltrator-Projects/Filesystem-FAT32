@@ -1,5 +1,4 @@
 %PDF-1.4
-%‚„œ”
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
 endobj
@@ -213,7 +212,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 21 0 R >>
 endobj
 21 0 obj
-<< /Length 2009 >>
+<< /Length 2003 >>
 stream
 0.05 0.13 0.22 rg 0 749 595 93 re f
 0.01 0.52 0.56 rg 50 747 116 5 re f
@@ -230,8 +229,8 @@ BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 614.0 Tm (1. Microsoft FAT Specifica
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 585.0 Tm (https://www.scs.stanford.edu/~zyedidia/docs/_other/fat.pdf) Tj ET
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 556.0 Tm (2. Linux VFAT support documentation) Tj ET
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 527.0 Tm (https://docs.kernel.org/filesystems/vfat.html) Tj ET
-BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 498.0 Tm (Implementation boundary: the installed InfiltratorOS .so, the optional Linux kernel .ko,) Tj ET
-BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 481.0 Tm (and the source-first installer are distinct products. The original filesystem design is) Tj ET
+BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 498.0 Tm (Implementation boundary: one installed Common V2 .so; no separate per-format driver.) Tj ET
+BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 481.0 Tm (The source-download installer builds that provider. The original filesystem design is) Tj ET
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 464.0 Tm (documented above; claims about the adapter's qualification require its own source, tests) Tj ET
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 447.0 Tm (and release evidence.) Tj ET
 endstream
@@ -463,43 +462,43 @@ endobj
 xref
 0 36
 0000000000 65535 f 
-0000000015 00000 n 
-0000000064 00000 n 
-0000000219 00000 n 
-0000000289 00000 n 
-0000000364 00000 n 
-0000000432 00000 n 
-0000000578 00000 n 
-0000003562 00000 n 
-0000003708 00000 n 
-0000005872 00000 n 
-0000006020 00000 n 
-0000008037 00000 n 
-0000008185 00000 n 
-0000010147 00000 n 
-0000010295 00000 n 
-0000012209 00000 n 
-0000012357 00000 n 
-0000014266 00000 n 
-0000014414 00000 n 
-0000016121 00000 n 
-0000016269 00000 n 
-0000018330 00000 n 
-0000018478 00000 n 
-0000020368 00000 n 
-0000020516 00000 n 
-0000022297 00000 n 
-0000022445 00000 n 
-0000024407 00000 n 
-0000024555 00000 n 
-0000027302 00000 n 
-0000027450 00000 n 
-0000030271 00000 n 
-0000030419 00000 n 
-0000033436 00000 n 
-0000033584 00000 n 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000213 00000 n 
+0000000283 00000 n 
+0000000358 00000 n 
+0000000426 00000 n 
+0000000572 00000 n 
+0000003556 00000 n 
+0000003702 00000 n 
+0000005866 00000 n 
+0000006014 00000 n 
+0000008031 00000 n 
+0000008179 00000 n 
+0000010141 00000 n 
+0000010289 00000 n 
+0000012203 00000 n 
+0000012351 00000 n 
+0000014260 00000 n 
+0000014408 00000 n 
+0000016115 00000 n 
+0000016263 00000 n 
+0000018318 00000 n 
+0000018466 00000 n 
+0000020356 00000 n 
+0000020504 00000 n 
+0000022285 00000 n 
+0000022433 00000 n 
+0000024395 00000 n 
+0000024543 00000 n 
+0000027290 00000 n 
+0000027438 00000 n 
+0000030259 00000 n 
+0000030407 00000 n 
+0000033424 00000 n 
+0000033572 00000 n 
 trailer
 << /Size 36 /Root 1 0 R >>
 startxref
-37541
+37529
 %%EOF

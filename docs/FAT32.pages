@@ -158,8 +158,8 @@ BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 614.0 Tm (1. Microsoft FAT Specifica
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 585.0 Tm (https://www.scs.stanford.edu/~zyedidia/docs/_other/fat.pdf) Tj ET
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 556.0 Tm (2. Linux VFAT support documentation) Tj ET
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 527.0 Tm (https://docs.kernel.org/filesystems/vfat.html) Tj ET
-BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 498.0 Tm (Implementation boundary: the installed InfiltratorOS .so, the optional Linux kernel .ko,) Tj ET
-BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 481.0 Tm (and the source-first installer are distinct products. The original filesystem design is) Tj ET
+BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 498.0 Tm (Implementation boundary: one installed Common V2 .so; no separate per-format driver.) Tj ET
+BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 481.0 Tm (The source-download installer builds that provider. The original filesystem design is) Tj ET
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 464.0 Tm (documented above; claims about the adapter's qualification require its own source, tests) Tj ET
 BT /F1 10.2 Tf 0.09 0.16 0.24 rg 1 0 0 1 51 447.0 Tm (and release evidence.) Tj ET
 %%Page
