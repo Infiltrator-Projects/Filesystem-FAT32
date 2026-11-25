@@ -26,10 +26,11 @@ The target installation is `/System/Filesystems/FAT32.so` and `/System/Resources
 
 ## 7. Technical references and provenance
 
-- [Provider implementation](native/filesystems/fat/module/fat32_module.c)
+- [Provider implementation](native/filesystems/fat/portable/fatfs_module.c)
 - [Native design or source provenance](docs/VALIDATION.md)
 - [Migration and source history](MIGRATION-PROVENANCE.md)
 - [Original-format reference source](docs/FAT32.pages) and [PDF](docs/FAT32.pdf)
+- [Field-level original-format specification supplement](docs/FORMAT_SPECIFICATION.md)
 - [Project philosophy](docs/PHILOSOPHY.md)
 - [Common ABI](https://github.com/Infiltrator-Projects/Libraries)
 - [One-module architecture](docs/ONE_MODULE_END_STATE.md)
