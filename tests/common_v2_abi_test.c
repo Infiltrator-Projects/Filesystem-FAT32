@@ -52,9 +52,9 @@ int main(int argc,char **argv)
      * remain unadvertised until real implementations qualify. */
     if(!(volume_ops->header.capabilities & IFS_FS_VOLUME_CHECK) || !volume_ops->check ||
        (volume_ops->header.capabilities & IFS_FS_VOLUME_REPAIR) ||
-       !defrag_ops || defrag_ops->header.capabilities!=IFS_FS_DEFRAG_MAP ||
-       !defrag_ops->map || defrag_ops->plan || defrag_ops->execute ||
-       defrag_ops->verify || defrag_ops->recover || defrag_ops->release_plan)
+       !defrag_ops || defrag_ops->header.capabilities!=IFS_FS_DEFRAG_ALL ||
+       !defrag_ops->map || !defrag_ops->plan || !defrag_ops->execute ||
+       !defrag_ops->verify || !defrag_ops->recover || !defrag_ops->release_plan)
         return 9;
     if(dlclose(library)!=0)return 10;
     puts("FAT32-STRICT-COMMON-V2-ABI-PASS");

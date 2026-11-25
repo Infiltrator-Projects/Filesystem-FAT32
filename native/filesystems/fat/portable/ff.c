@@ -6437,7 +6437,7 @@ FRESULT f_mkfs (
 				}
 				n_clst = (DWORD)sz_vol / pau;	/* Number of clusters */
 				sz_fat = (n_clst * 4 + 8 + ss - 1) / ss;	/* FAT size [sector] */
-				sz_rsv = 32;	/* Number of reserved sectors */
+				sz_rsv = 80;	/* Native redo journal and standard FAT32 reserved metadata */
 				sz_dir = 0;		/* No static directory */
 				if (n_clst <= MAX_FAT16 || n_clst > MAX_FAT32) LEAVE_MKFS(FR_MKFS_ABORTED);
 			} else {				/* FAT volume */
@@ -6509,6 +6509,9 @@ FRESULT f_mkfs (
 		/* Create FAT VBR */
 		memset(buf, 0, ss);
 		memcpy(buf + BS_JmpBoot, "\xEB\xFE\x90" "MSDOS5.0", 11);	/* Boot jump code (x86), OEM name */
+#if defined(IFS_FATFS_ONLY) && IFS_FATFS_ONLY == 32
+		if (fsty == FS_FAT32) memcpy(buf + 3, "IFSJFAT3", 8);
+#endif
 		st_16(buf + BPB_BytsPerSec, ss);				/* Sector size [byte] */
 		buf[BPB_SecPerClus] = (BYTE)pau;				/* Cluster size [sector] */
 		st_16(buf + BPB_RsvdSecCnt, (WORD)sz_rsv);		/* Size of reserved area */
