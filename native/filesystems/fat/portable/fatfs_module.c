@@ -1561,6 +1561,25 @@ static const IfsFsDefragOpsV2 common_defrag={
     .recover=guarded_fr_recover,.release_plan=guarded_fr_release
 };
 
+/* Qualified default corpus geometry; native FORMAT supports other sizes. */
+static int default_format_profile(IfsFsFormatProfileV2 *p)
+{
+    if(!p || p->structure_bytes<sizeof(*p))return IFS_FS_INVALID;
+    *p=(IfsFsFormatProfileV2){
+        .structure_bytes=sizeof(*p), .flags=IFS_FS_FORMAT_REQUIRE_CHECK,
+        .format_variant=32u, .probe_variant=32u,
+        .layout=IFS_FS_LAYOUT_MULTI_EXTENT,
+        .minimum_bytes=2048ull*1024u*1024u,
+        .recommended_bytes=2048ull*1024u*1024u,
+        .maximum_bytes=2048ull*1024u*1024u
+    };
+    return IFS_FS_OK;
+}
+static const IfsFsFormatProfileOpsV2 format_profile_ops={
+    .header={IFS_FS_GROUP_ABI_V2,sizeof(IfsFsFormatProfileOpsV2),
+             IFS_FS_GROUP_FORMAT_PROFILE,0u,IFS_FS_FORMAT_PROFILE_DEFAULT},
+    .get_default=default_format_profile
+};
 static const IfsFsGroupHeaderV2 *common_query(
     uint32_t group_id,uint32_t minimum,uint32_t maximum)
 {
@@ -1570,13 +1589,15 @@ static const IfsFsGroupHeaderV2 *common_query(
     if(group_id==IFS_FS_GROUP_VOLUME)return &common_volume.header;
     if(group_id==IFS_FS_GROUP_DEFRAG)return &common_defrag.header;
     if(group_id==IFS_FS_GROUP_ALLOCATION)return &common_allocation.header;
+    if(group_id==IFS_FS_GROUP_FORMAT_PROFILE)return &format_profile_ops.header;
     return NULL;
 }
 static const IfsFsModuleApiV2 common_v2={
     IFS_FS_COMMON_ABI_V2,sizeof(IfsFsModuleApiV2),"fat32",
     IFS_FS_PROFILE_HOSTED|IFS_FS_PROFILE_FREESTANDING|IFS_FS_PROFILE_FIRMWARE,
     IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE)|IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME)|
-    IFS_FS_GROUP_BIT(IFS_FS_GROUP_DEFRAG)|IFS_FS_GROUP_BIT(IFS_FS_GROUP_ALLOCATION),
+    IFS_FS_GROUP_BIT(IFS_FS_GROUP_DEFRAG)|IFS_FS_GROUP_BIT(IFS_FS_GROUP_ALLOCATION)|
+    IFS_FS_GROUP_BIT(IFS_FS_GROUP_FORMAT_PROFILE),
     common_query
 };
 __attribute__((visibility("default")))

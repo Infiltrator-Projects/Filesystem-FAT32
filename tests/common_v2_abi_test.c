@@ -31,9 +31,21 @@ int main(int argc,char **argv)
     if(api->group_mask!=(IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE)|
                          IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME)|
                          IFS_FS_GROUP_BIT(IFS_FS_GROUP_DEFRAG)|
-         IFS_FS_GROUP_BIT(IFS_FS_GROUP_ALLOCATION)) ||
+         IFS_FS_GROUP_BIT(IFS_FS_GROUP_ALLOCATION)|
+                         IFS_FS_GROUP_BIT(IFS_FS_GROUP_FORMAT_PROFILE)) ||
        (api->runtime_profiles & IFS_FS_PROFILE_KERNEL))
         return 6;
+    const IfsFsFormatProfileOpsV2 *profile=(const IfsFsFormatProfileOpsV2 *)
+        ifs_fs_group_v2(api,IFS_FS_GROUP_FORMAT_PROFILE);
+    IfsFsFormatProfileV2 defaults={.structure_bytes=sizeof(defaults)};
+    if(!profile || !profile->get_default ||
+       profile->get_default(NULL)!=IFS_FS_INVALID ||
+       profile->get_default(&defaults)!=IFS_FS_OK ||
+       !ifs_fs_format_profile_v2_valid(&defaults) ||
+       defaults.format_variant!=32u || defaults.probe_variant!=32u ||
+       defaults.layout!=IFS_FS_LAYOUT_MULTI_EXTENT ||
+       defaults.recommended_bytes!=2048ull*1024u*1024u ||
+       defaults.flags!=IFS_FS_FORMAT_REQUIRE_CHECK)return 6;
     const IfsFsCoreOpsV2 *core=
         (const IfsFsCoreOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_CORE);
     const IfsFsVolumeOpsV2 *volume_ops=
