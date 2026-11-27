@@ -9,7 +9,7 @@ if(NOT EXISTS "${COMMON_INCLUDE_DIR}/infiltratr/filesystem_module_v2.h")
 endif()
 set(ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
 set(FS "${ROOT}/native/filesystems/fat")
-add_library(firmware SHARED
+add_library(firmware MODULE
   "${FS}/module/fat32_module.c"
   "${FS}/portable/fatfs_module.c"
   "${FS}/portable/ff.c"
