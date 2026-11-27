@@ -16,7 +16,7 @@ add_library(firmware MODULE
   "${FS}/portable/ffunicode.c"
   "${FS}/portable/fatfs_libc.c"
 )
-set_target_properties(firmware PROPERTIES PREFIX "" OUTPUT_NAME "FAT32" C_STANDARD 11 C_STANDARD_REQUIRED ON C_VISIBILITY_PRESET hidden)
+set_target_properties(firmware PROPERTIES PREFIX "" SUFFIX ".so" OUTPUT_NAME "FAT32" C_STANDARD 11 C_STANDARD_REQUIRED ON C_VISIBILITY_PRESET hidden)
 target_include_directories(firmware PRIVATE "${COMMON_INCLUDE_DIR}" "${FS}/module" "${FS}/portable" "${ROOT}/native/include")
 target_compile_definitions(firmware PRIVATE _GNU_SOURCE _FILE_OFFSET_BITS=64 IFS_FATFS_ONLY=32 IFS_FAT32_INDEPENDENT=1)
 target_compile_options(firmware PRIVATE -O2 -march=x86-64 -mtune=generic -mno-red-zone -mgeneral-regs-only -fcf-protection=none -ffreestanding -fno-builtin -fno-stack-protector -fno-tree-loop-distribute-patterns -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0)
