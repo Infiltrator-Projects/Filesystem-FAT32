@@ -1088,7 +1088,7 @@ typedef struct {
     FIL table;
     uint8_t *owned;
     uint32_t *queue;
-    uint32_t queued;
+    uint32_t queued,queue_capacity;
     uint64_t errors;
 } FatCheckV2;
 
@@ -1131,6 +1131,33 @@ static int check_chain(FatCheckV2 *c,uint32_t first,uint64_t wanted,int director
     ++c->errors;return IFS_FS_CORRUPT;
 }
 
+/* Grow the directory worklist only as the namespace is encountered. A
+ * mostly empty multi-terabyte FAT32 volume needs one ownership bit per
+ * cluster, not an additional four bytes per cluster for unused entries.
+ * The maximum possible directory count remains bounded by the validated
+ * allocation domain, and allocation failure leaves media untouched. */
+static int check_enqueue(FatCheckV2 *c,uint32_t cluster)
+{
+    if(c->queued==c->queue_capacity) {
+        const uint32_t maximum=volume.n_fatent-2u;
+        if(c->queued>=maximum)return IFS_FS_CORRUPT;
+        uint32_t next=c->queue_capacity;
+        if(!next)next=maximum<16u?maximum:16u;
+        else next=next>maximum/2u?maximum:next*2u;
+        if((uint64_t)next*sizeof(*c->queue)>SIZE_MAX)return IFS_FS_NO_MEMORY;
+        const IfsFsHostRuntimeV2 *h=&common_session.host;
+        uint32_t *grown=h->allocate(h->context,(size_t)next*sizeof(*grown));
+        if(!grown)return IFS_FS_NO_MEMORY;
+        if(c->queue) {
+            memcpy(grown,c->queue,(size_t)c->queued*sizeof(*grown));
+            h->release(h->context,c->queue);
+        }
+        c->queue=grown;c->queue_capacity=next;
+    }
+    c->queue[c->queued++]=cluster;
+    return IFS_FS_OK;
+}
+
 static int check_record(FatCheckV2 *c,const uint8_t *e,uint64_t unit)
 {
     if(e[0]==0xe5u || e[11]==0x0fu || (e[11]&0x08u))return IFS_FS_OK;
@@ -1143,8 +1170,7 @@ static int check_record(FatCheckV2 *c,const uint8_t *e,uint64_t unit)
            c->queued>=volume.n_fatent-2u) {
             ++c->errors;return IFS_FS_OK;
         }
-        c->queue[c->queued++]=first;
-        return IFS_FS_OK;
+        return check_enqueue(c,first);
     }
     int rc=check_chain(c,first,(size+unit-1u)/unit,0);
     return rc==IFS_FS_CORRUPT?IFS_FS_OK:rc;
@@ -1217,21 +1243,19 @@ static int check_volume(void *context,uint32_t flags,uint64_t *errors,int mirror
        volume.wflag)return IFS_FS_CORRUPT;
     const IfsFsHostRuntimeV2 *h=&common_session.host;
     const uint64_t unit=(uint64_t)volume.csize*device.sector_bytes;
-    const uint64_t queue_bytes=(uint64_t)volume.n_fatent*sizeof(uint32_t);
-    if(queue_bytes>SIZE_MAX)return IFS_FS_NO_MEMORY;
     const size_t bitmap=(size_t)(((uint64_t)volume.n_fatent+7u)/8u);
     FatCheckV2 c={0};
     c.table.obj.fs=&volume;
     c.owned=h->allocate(h->context,bitmap);
-    c.queue=h->allocate(h->context,(size_t)queue_bytes);
     int rc=IFS_FS_NO_MEMORY;
-    if(!c.owned || !c.queue)goto done;
+    if(!c.owned)goto done;
     memset(c.owned,0,bitmap);
     if(mirrors) {
         rc=check_mirrors(&c);
         if(rc!=IFS_FS_OK)goto done;
     }
-    c.queue[c.queued++]=(uint32_t)volume.dirbase;
+    rc=check_enqueue(&c,(uint32_t)volume.dirbase);
+    if(rc!=IFS_FS_OK)goto done;
     for(uint32_t head=0u;head<c.queued;++head) {
         rc=check_directory(&c,c.queue[head],unit);
         if(rc!=IFS_FS_OK)goto done;

@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-typedef struct { int fd; uint64_t bytes; uint32_t sector; unsigned writes,flushes,fail_flush; int fail_reads; unsigned failed_reads; } Disk;
+typedef struct { int fd; uint64_t bytes; uint32_t sector; unsigned writes,flushes,fail_flush; int fail_reads; unsigned failed_reads; size_t allocation_limit; } Disk;
 static int bounds(const Disk *d,uint64_t at,uint32_t n)
 { return d->sector && !(at%d->sector) && !(n%d->sector) &&
          at<=d->bytes && n<=d->bytes-at; }
@@ -54,7 +54,11 @@ static int flush(void *u) {
 }
 static int fail(const char *message)
 { fprintf(stderr,"FAT32-COMMON-FAIL: %s\n",message);return 1; }
-static void *allocate_at(void *ctx,size_t n) {(void)ctx;return malloc(n);}
+static void *allocate_at(void *ctx,size_t n) {
+    Disk *d=ctx;
+    if(d && d->allocation_limit && n>d->allocation_limit)return NULL;
+    return malloc(n);
+}
 static void release_at(void *ctx,void *p) {(void)ctx;free(p);}
 
 /* Inspect the short directory entry directly, independently of FatFs. */
@@ -452,10 +456,26 @@ int main(int argc,char **argv)
      * entry in every mirror, without giving it a directory owner. CHECK
      * must reject the orphan even though the file corpus remains readable. */
     uint64_t errors=UINT64_MAX;
+    /* Force multiple worklist growth events. The host's allocation budget
+     * allows an ownership bitmap, but refuses the old full-cluster queue. */
+    for(unsigned i=0u;i<40u;++i) {
+        char name[32];snprintf(name,sizeof name,"/CHECK%02u",i);
+        if(fs->create(session,name,IFS_FS_ENTRY_DIRECTORY)!=IFS_FS_OK)
+            return fail("create checker worklist fixture");
+    }
+    if(vol->query(session,&info)!=IFS_FS_OK || !info.block_bytes)
+        return fail("checker geometry");
+    disk.allocation_limit=(size_t)(disk.bytes/info.block_bytes/8u+4096u);
     unsigned before_check=disk.writes;
-    if(vol->check(session,0u,&errors)!=IFS_FS_OK || errors ||
-       disk.writes!=before_check)
-        return fail("native FAT32 integrity check changed or rejected clean media");
+    int checked=vol->check(session,0u,&errors);
+    disk.allocation_limit=0u;
+    if(checked!=IFS_FS_OK || errors || disk.writes!=before_check)
+        return fail("native FAT32 bounded-memory integrity check");
+    for(unsigned i=0u;i<40u;++i) {
+        char name[32];snprintf(name,sizeof name,"/CHECK%02u",i);
+        if(fs->remove(session,name)!=IFS_FS_OK)
+            return fail("remove checker worklist fixture");
+    }
     if(vol->sync(session)!=IFS_FS_OK || fs->unmount(session)!=IFS_FS_OK)
         return fail("new-media FAT integrity or unmount");
     {
