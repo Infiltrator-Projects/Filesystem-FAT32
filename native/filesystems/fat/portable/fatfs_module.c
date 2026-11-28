@@ -1208,7 +1208,7 @@ static int check_mirrors(FatCheckV2 *c)
     return IFS_FS_OK;
 }
 
-static int common_v2_check(void *context,uint32_t flags,uint64_t *errors)
+static int check_volume(void *context,uint32_t flags,uint64_t *errors,int mirrors)
 {
     if(!errors)return IFS_FS_INVALID;
     *errors=0u;
@@ -1227,8 +1227,10 @@ static int common_v2_check(void *context,uint32_t flags,uint64_t *errors)
     int rc=IFS_FS_NO_MEMORY;
     if(!c.owned || !c.queue)goto done;
     memset(c.owned,0,bitmap);
-    rc=check_mirrors(&c);
-    if(rc!=IFS_FS_OK)goto done;
+    if(mirrors) {
+        rc=check_mirrors(&c);
+        if(rc!=IFS_FS_OK)goto done;
+    }
     c.queue[c.queued++]=(uint32_t)volume.dirbase;
     for(uint32_t head=0u;head<c.queued;++head) {
         rc=check_directory(&c,c.queue[head],unit);
@@ -1249,6 +1251,83 @@ done:
     if(rc==IFS_FS_OK)*errors=c.errors;
     return rc;
 }
+static int common_v2_check(void *context,uint32_t flags,uint64_t *errors)
+{
+    return check_volume(context,flags,errors,1);
+}
+
+/* Repair only redundant allocation entries, with a fully validated primary
+ * FAT as the authority. Never reclaim orphans or guess at directory repairs.
+ * Whole-sector durable writes preserve padding and the primary table; an
+ * interrupted secondary copy can be retried after a fresh mount. */
+static int common_v2_repair(void *context,uint32_t flags,uint64_t *repairs)
+{
+    if(!repairs)return IFS_FS_INVALID;
+    *repairs=0u;
+    if(!common_session_valid(context))return IFS_FS_INVALID;
+    if(flags)return IFS_FS_UNSUPPORTED;
+    if(!common_writable())return IFS_FS_ACCESS;
+    const IfsFsHostRuntimeV2 *h=&common_session.host;
+    if(!(h->capabilities&IFS_FS_HOST_DURABLE) ||
+       h->logical_sector_bytes!=device.sector_bytes ||
+       h->physical_sector_bytes!=device.sector_bytes)return IFS_FS_UNSUPPORTED;
+    if(volume.n_fats<2u)return IFS_FS_UNSUPPORTED;
+    uint8_t boot[4096];
+    if(disk_read(0,boot,volume.volbase,1u)!=RES_OK)return IFS_FS_IO_ERROR;
+    /* An explicitly non-mirrored FAT has no redundant authoritative copy. */
+    if(check_le16(boot+40)&0x80u)return IFS_FS_UNSUPPORTED;
+    uint64_t errors=0u;
+    int rc=check_volume(context,0u,&errors,0);
+    if(rc!=IFS_FS_OK)return rc;
+    if(errors)return IFS_FS_CORRUPT;
+    const uint32_t per=device.sector_bytes/4u;
+    if(!per)return IFS_FS_CORRUPT;
+    const uint64_t sectors=((uint64_t)volume.n_fatent+per-1u)/per;
+    if(sectors>volume.fsize)return IFS_FS_CORRUPT;
+    uint8_t primary[4096],secondary[4096];
+    uint64_t changed=0u;
+    for(uint32_t copy=1u;copy<volume.n_fats;++copy) {
+        for(uint64_t n=0u;n<sectors;++n) {
+            if(check_cancelled())return IFS_FS_BUSY;
+            const uint64_t src=(uint64_t)volume.fatbase+n;
+            const uint64_t dst=src+(uint64_t)copy*volume.fsize;
+            if(disk_read(0,primary,(LBA_t)src,1u)!=RES_OK ||
+               disk_read(0,secondary,(LBA_t)dst,1u)!=RES_OK)return IFS_FS_IO_ERROR;
+            int dirty=0;
+            for(uint32_t i=0u;i<per && n*per+i<volume.n_fatent;++i) {
+                const uint32_t from=check_le32(primary+i*4u);
+                const uint32_t to=check_le32(secondary+i*4u);
+                if((from&0x0fffffffu)!=(to&0x0fffffffu)) {
+                    /* The high four reserved bits belong to the destination
+                     * entry; preserve them rather than cloning raw sectors. */
+                    memcpy(secondary+i*4u,primary+i*4u,3u);
+                    secondary[i*4u+3u]=(uint8_t)((to>>24&0xf0u)|(from>>24&0x0fu));
+                    dirty=1;
+                }
+            }
+            if(dirty) {
+                if(common_write(&common_session.host,dst*device.sector_bytes,
+                                secondary,device.sector_bytes) ||
+                   common_flush(&common_session.host)) {
+                    common_session.mutation_fault=1;
+                    return IFS_FS_IO_ERROR;
+                }
+                ++changed;
+            }
+        }
+    }
+    rc=check_volume(context,0u,&errors,1);
+    if(rc!=IFS_FS_OK)return rc;
+    if(errors)return IFS_FS_CORRUPT;
+    *repairs=changed;
+    return IFS_FS_OK;
+}
+static int guarded_common_v2_repair(void *context,uint32_t flags,uint64_t *repairs)
+{
+    if(repairs)*repairs=0u;
+    if(!v2_enter_operation())return IFS_FS_BUSY;
+    return v2_leave_operation(common_v2_repair(context,flags,repairs));
+}
 static int guarded_common_v2_check(void *context,uint32_t flags,uint64_t *errors)
 {
     if(errors)*errors=0u;
@@ -1261,11 +1340,11 @@ static const char common_v2_identity[]="IFS-MODULE:fat32:common2";
 static const IfsFsVolumeOpsV2 common_volume={
     .header={IFS_FS_GROUP_ABI_V2,sizeof(IfsFsVolumeOpsV2),
              IFS_FS_GROUP_VOLUME,0u,
-             IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_LABEL_GET|IFS_FS_VOLUME_LABEL_SET|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT|IFS_FS_VOLUME_CHECK},
+             IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_LABEL_GET|IFS_FS_VOLUME_LABEL_SET|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT|IFS_FS_VOLUME_CHECK|IFS_FS_VOLUME_REPAIR},
     .label=guarded_v2_label,.set_label=v2_set_label,
     .query=guarded_v2_query,
     .sync=guarded_v2_sync,
-    .format=guarded_common_format,.check=guarded_common_v2_check
+    .format=guarded_common_format,.check=guarded_common_v2_check,.repair=guarded_common_v2_repair
 };
 /* V2 core and volume tables operate against the same native FatFs state. */
 static const IfsFsCoreOpsV2 common_core={

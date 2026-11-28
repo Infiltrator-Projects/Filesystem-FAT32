@@ -63,10 +63,9 @@ int main(int argc,char **argv)
         (IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT)) !=
         (IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_SYNC|IFS_FS_VOLUME_FORMAT))
         return 8;
-    /* CHECK is now native and must be exported; REPAIR and relocation
-     * remain unadvertised until real implementations qualify. */
+    /* Native checking, bounded secondary FAT repair and relocation are required. */
     if(!(volume_ops->header.capabilities & IFS_FS_VOLUME_CHECK) || !volume_ops->check ||
-       (volume_ops->header.capabilities & IFS_FS_VOLUME_REPAIR) ||
+       !(volume_ops->header.capabilities & IFS_FS_VOLUME_REPAIR) || !volume_ops->repair ||
        !defrag_ops || defrag_ops->header.capabilities!=IFS_FS_DEFRAG_ALL ||
        !defrag_ops->map || !defrag_ops->plan || !defrag_ops->execute ||
        !defrag_ops->verify || !defrag_ops->recover || !defrag_ops->release_plan)
